@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "hubspot-operator": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/gtm-operator-public/plugins/hubspot-operator/dist/server.js"
+      ]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./plugins/hubspot-operator/.env)",
+      "Read(./plugins/hubspot-operator/.env.*)"
+    ]
+  }
+}

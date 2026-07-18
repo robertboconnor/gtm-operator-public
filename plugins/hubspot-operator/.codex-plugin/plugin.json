@@ -1,0 +1,38 @@
+{
+  "name": "hubspot-operator",
+  "version": "0.1.0",
+  "description": "Use Codex as a GTM stack operator through local HubSpot MCP tools plus Salesforce Hosted MCP launchers and operating guidance.",
+  "author": {
+    "name": "Roberto O'Connor"
+  },
+  "license": "MIT",
+  "keywords": [
+    "gtm",
+    "hubspot",
+    "salesforce",
+    "mcp",
+    "codex",
+    "crm",
+    "workflows"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "GTM Stack Operator",
+    "shortDescription": "Use Codex directly as your GTM stack operator",
+    "longDescription": "A local Codex plugin that gives Codex deterministic HubSpot tools plus Salesforce Hosted MCP launchers and operating guidance for technical GTM ops owners.",
+    "developerName": "Roberto O'Connor",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Inspect this HubSpot workflow and summarize it",
+      "Inspect Salesforce schema and metadata context",
+      "Find the matching CRM records and update a field",
+      "Create manual workflows and report any API gaps"
+    ]
+  }
+}

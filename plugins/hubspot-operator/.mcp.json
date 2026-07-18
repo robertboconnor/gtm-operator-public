@@ -1,0 +1,47 @@
+{
+  "mcpServers": {
+    "hubspot-operator": {
+      "command": "node",
+      "args": [
+        "./dist/server.js"
+      ],
+      "cwd": "."
+    },
+    "salesforce-sobject-all": {
+      "command": "bash",
+      "args": [
+        "./bin/salesforce-mcp-remote.sh",
+        "sobject-all",
+        "8080"
+      ],
+      "cwd": "."
+    },
+    "salesforce-api-context": {
+      "command": "bash",
+      "args": [
+        "./bin/salesforce-mcp-remote.sh",
+        "salesforce-api-context",
+        "8081"
+      ],
+      "cwd": "."
+    },
+    "salesforce-metadata-experts": {
+      "command": "bash",
+      "args": [
+        "./bin/salesforce-mcp-remote.sh",
+        "metadata-experts",
+        "8082"
+      ],
+      "cwd": "."
+    },
+    "salesforce-sobject-deletes": {
+      "command": "bash",
+      "args": [
+        "./bin/salesforce-mcp-remote.sh",
+        "sobject-deletes",
+        "8083"
+      ],
+      "cwd": "."
+    }
+  }
+}

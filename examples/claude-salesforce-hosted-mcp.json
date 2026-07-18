@@ -1,0 +1,44 @@
+{
+  "_instructions": [
+    "Use this as a local Claude Code config-file-shaped reference.",
+    "For Claude web connectors, use the hosted connector UI and callback https://claude.ai/api/mcp/auth_callback instead.",
+    "For local Claude Code, this repo uses mcp-remote with fixed local OAuth callback ports.",
+    "Add these callback URLs to the Salesforce External Client App: http://localhost:8080/oauth/callback, http://localhost:8081/oauth/callback, http://localhost:8082/oauth/callback.",
+    "Start with sandbox URLs unless production is explicitly intended."
+  ],
+  "mcpServers": {
+    "salesforce-sobject-all": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://api.salesforce.com/platform/mcp/v1/sandbox/platform/sobject-all",
+        "8080",
+        "--static-oauth-client-info",
+        "{\"client_id\":\"PASTE_EXTERNAL_CLIENT_APP_CONSUMER_KEY_HERE\",\"client_secret\":\"\"}"
+      ]
+    },
+    "salesforce-api-context": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://api.salesforce.com/platform/mcp/v1/sandbox/platform/salesforce-api-context",
+        "8081",
+        "--static-oauth-client-info",
+        "{\"client_id\":\"PASTE_EXTERNAL_CLIENT_APP_CONSUMER_KEY_HERE\",\"client_secret\":\"\"}"
+      ]
+    },
+    "salesforce-metadata-experts": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://api.salesforce.com/platform/mcp/v1/sandbox/platform/metadata-experts",
+        "8082",
+        "--static-oauth-client-info",
+        "{\"client_id\":\"PASTE_EXTERNAL_CLIENT_APP_CONSUMER_KEY_HERE\",\"client_secret\":\"\"}"
+      ]
+    }
+  }
+}

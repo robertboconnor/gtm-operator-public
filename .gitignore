@@ -1,0 +1,31 @@
+.DS_Store
+node_modules
+.env
+.claude/settings.local.json
+plugins/hubspot-operator/.env
+plugins/hubspot-operator/.salesforce-bulk-session.json
+npm-debug.log*
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Salesforce CLI auth + local state. Never commit org credentials.
+.sf/
+.sfdx/
+.sf-cache/
+
+# Working data pulled from Salesforce/HubSpot contains customer PII, so it is
+# written outside the repo entirely — see scripts/lib/paths.mjs (GTM_OUTPUT_ROOT,
+# default ~/gtm-operator-output). These entries stay as a backstop in case
+# anything is ever run with a relative path.
+outputs/
+exports/
+
+# Ephemeral staging only. tmp/ must stay inside the repo: `sf project retrieve
+# start --output-dir` rejects a path outside the project root. Scripts mkdtemp
+# here and clean up after themselves — nothing durable should land in it.
+tmp/
+
+# Metadata build artifacts (deploy zips, retrieve unpacks)
+*.zip
