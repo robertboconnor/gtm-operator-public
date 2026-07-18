@@ -1,0 +1,5 @@
+interface:
+  display_name: "HubSpot Operator"
+  short_description: "Operate HubSpot directly through a local MCP server"
+  brand_color: "#FF7A59"
+  default_prompt: "Use $hubspot-operator to inspect, update, or create HubSpot workflows, CRM records, and lists/segments with truthful verification."

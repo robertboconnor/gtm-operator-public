@@ -1,0 +1,64 @@
+# Example Codex MCP config for Salesforce Hosted MCP.
+#
+# This repo uses mcp-remote for Salesforce because Salesforce Hosted MCP
+# requires a fixed OAuth callback URL and Codex native OAuth can otherwise use
+# an ephemeral loopback port.
+#
+# Add these callback URLs to the Salesforce External Client App:
+#
+# http://localhost:8080/oauth/callback
+# http://localhost:8081/oauth/callback
+# http://localhost:8082/oauth/callback
+#
+# Replace PASTE_EXTERNAL_CLIENT_APP_CONSUMER_KEY_HERE with the Consumer Key
+# from Salesforce Setup > External Client App Manager > GTM Stack Operator >
+# Settings > OAuth Settings > Consumer Key and Secret.
+#
+# Start with sandbox URLs unless production is explicitly intended.
+
+[mcp_servers.salesforce-sobject-all]
+command = "npx"
+args = [
+  "-y",
+  "mcp-remote",
+  "https://api.salesforce.com/platform/mcp/v1/platform/sobject-all",
+  "8080",
+  "--static-oauth-client-info",
+  "{\"client_id\":\"YOUR_SALESFORCE_CONNECTED_APP_CLIENT_ID\",\"client_secret\":\"\"}"
+]
+
+[mcp_servers.salesforce-api-context]
+command = "npx"
+args = [
+  "-y",
+  "mcp-remote",
+  "https://api.salesforce.com/platform/mcp/v1/platform/salesforce-api-context",
+  "8081",
+  "--static-oauth-client-info",
+  "{\"client_id\":\"YOUR_SALESFORCE_CONNECTED_APP_CLIENT_ID\",\"client_secret\":\"\"}"
+]
+
+[mcp_servers.salesforce-metadata-experts]
+command = "npx"
+args = [
+  "-y",
+  "mcp-remote",
+  "https://api.salesforce.com/platform/mcp/v1/platform/metadata-experts",
+  "8082",
+  "--static-oauth-client-info",
+  "{\"client_id\":\"YOUR_SALESFORCE_CONNECTED_APP_CLIENT_ID\",\"client_secret\":\"\"}"
+]
+
+# Production equivalents use the same ports and callback URLs, but remove
+# /sandbox from the Salesforce server URL.
+
+[mcp_servers.salesforce-sobject-deletes]
+command = "npx"
+args = [
+  "-y",
+  "mcp-remote",
+  "https://api.salesforce.com/platform/mcp/v1/platform/sobject-deletes",
+  "8083",
+  "--static-oauth-client-info",
+  "{\"client_id\":\"YOUR_SALESFORCE_CONNECTED_APP_CLIENT_ID\",\"client_secret\":\"\"}"
+]
