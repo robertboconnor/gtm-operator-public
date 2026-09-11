@@ -1,274 +1,200 @@
-# Salesforce Hosted MCP Setup
+# Salesforce Access Setup (JWT)
 
-Salesforce support in this repo is intentionally thin. Salesforce hosts the MCP servers, owns OAuth, enforces Salesforce permissions, and exposes the actual tools.
+Salesforce access here is the **`sf` CLI authenticated headlessly through the
+OAuth 2.0 JWT Bearer flow**, plus the node scripts under `scripts/`. No browser
+OAuth, no per-machine consent tabs, and every action attributed to the named
+user you log in as.
 
-This repo supplies the setup runbook, config examples, and skills that tell Codex or Claude Code how to operate those servers safely.
+**Why this rather than Salesforce's Hosted MCP servers:** the MCP surface works a
+record at a time. GTM operators work in sets — backfill a field across a segment,
+re-own a book of accounts, re-stamp campaign members, deploy a flow. The CLI
+reaches the APIs that do that (REST/SOQL, **Bulk 2.0**, Tooling, Metadata), and
+the scripts here wrap the sharp edges. Hosted MCP is still available as an
+optional add-on for schema and metadata intelligence — see the appendix — but it
+is not the default and nothing here requires it.
 
-## What You Are Setting Up
+## What you are setting up
 
-You need two things:
+1. A local RSA keypair. The private key signs the JWT assertion; the public
+   certificate is uploaded to Salesforce.
+2. An **External Client App** with the JWT Bearer flow enabled and that
+   certificate as its signing certificate.
+3. `sf org login jwt` to establish the CLI session. The node scripts reuse it.
 
-1. A Salesforce **External Client App** that lets an MCP client authenticate with OAuth.
-2. MCP client entries in Codex or Claude that point at Salesforce Hosted MCP servers and use that app's **Consumer Key** as the OAuth client ID.
-
-Do not create a classic Connected App for this. Salesforce says Hosted MCP authentication uses an External Client App.
-
-## Servers To Enable
-
-Enable these Salesforce Hosted MCP servers:
-
-| Server | Use |
-| --- | --- |
-| `platform/sobject-all` | SObject CRUD, SOQL/SOSL, record inspection, schema/object info, relationships |
-| `platform/salesforce-api-context` | Metadata API and Tooling/Data API context, metadata type docs, field/property rules, payload guidance |
-| `platform/metadata-experts` | Metadata-type-specific expert actions through `execute_metadata_action` |
-
-Production URLs:
-
-```text
-https://api.salesforce.com/platform/mcp/v1/platform/sobject-all
-https://api.salesforce.com/platform/mcp/v1/platform/salesforce-api-context
-https://api.salesforce.com/platform/mcp/v1/platform/metadata-experts
-```
-
-Sandbox and scratch URLs:
-
-```text
-https://api.salesforce.com/platform/mcp/v1/sandbox/platform/sobject-all
-https://api.salesforce.com/platform/mcp/v1/sandbox/platform/salesforce-api-context
-https://api.salesforce.com/platform/mcp/v1/sandbox/platform/metadata-experts
-```
-
-## Part 1: Create The External Client App
-
-Do this once per Salesforce org/environment.
-
-1. In Salesforce Setup, search for **External Client App Manager**.
-2. Click **New External Client App**.
-3. Fill out **Basic Information**.
-   - Name: `GTM Stack Operator`
-   - Contact Email: use the GTM systems owner or admin email
-   - Distribution State: keep this internal/private unless your org has a reason to package it
-4. Expand **API (Enable OAuth Settings)**.
-5. Select **Enable OAuth**.
-6. Set **Callback URL** based on the MCP client. For this repo's local Codex and local Claude Code setup, add all three callback URLs, one per line:
-   - `http://localhost:8080/oauth/callback`
-   - `http://localhost:8081/oauth/callback`
-   - `http://localhost:8082/oauth/callback`
-7. If you also use other clients, add their callback URLs on separate lines:
-   - Claude web connector: `https://claude.ai/api/mcp/auth_callback`
-   - Postman test client: `https://oauth.pstmn.io/v1/callback`
-   - Postman web: `https://oauth.pstmn.io/v1/browser-callback`
-   - Cursor direct connector: `cursor://anysphere.cursor-mcp/oauth/callback`
-8. Add OAuth scopes:
-   - **Access MCP servers** (`mcp_api`)
-   - **Manage user data via APIs** (`api`)
-   - **Perform requests at any time** (`refresh_token`)
-9. Under **Security**, select:
-   - **Issue JSON Web Token (JWT)-based access tokens for named users**
-   - **Require Proof Key for Code Exchange (PKCE) extension for Supported Authorization Flows**
-10. Under **Security**, leave these unselected unless your client vendor explicitly tells you otherwise:
-   - Issue access tokens in access_token parameter
-   - Enable Client Credentials Flow
-   - Require Secret for Web Server Flow
-   - Require Secret for Refresh Token Flow
-   - Enable Authorization Code and Credentials Flow
-11. Click **Create**.
-12. Wait for the app to become available. Salesforce says this can take up to 30 minutes.
-13. Open the new External Client App's **Settings**.
-14. Under **OAuth Settings**, click **Consumer Key and Secret**.
-15. Copy the **Consumer Key**. This is the value the MCP client uses as the OAuth client ID.
-
-Do not paste the Consumer Secret into this repo. For desktop/local MCP clients using PKCE, the important value is the Consumer Key.
-
-## Part 2: Restrict Who Can Use It
-
-By default, Salesforce can allow broad user access through the External Client App. For a GTM stack operator, restrict it.
-
-Recommended setup:
-
-1. Create a permission set such as `GTM Stack Operator MCP Access`.
-2. Assign it only to technical GTM ops users who should operate Salesforce through MCP.
-3. In the External Client App, go to **OAuth Policies**.
-4. Require the permission set for pre-authorization.
-5. Optionally enable:
-   - refresh token validity of 30 days or less
-   - refresh token rotation
-   - single logout
-
-Do not use IP restrictions unless you know the MCP client's network egress pattern. Some hosted clients use broad IP ranges.
-
-## Part 3: Configure This Application's MCP Client
-
-This repo does not store Salesforce tokens. The human operator configures Codex or Claude Code with:
-
-- Salesforce MCP server URL
-- External Client App Consumer Key
-- a fixed local OAuth callback port
-
-Use sandbox URLs first unless production is explicitly intended.
-
-### Codex
-
-Use:
+## Part 1: Generate the keypair (once per machine)
 
 ```bash
-examples/codex-salesforce-hosted-mcp.toml
+DIR="$HOME/.config/gtm-operator/salesforce-jwt"
+mkdir -p "$DIR" && chmod 700 "$DIR"
+openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+  -keyout "$DIR/server.key" -out "$DIR/server.crt" \
+  -subj "/CN=gtm-operator-jwt/O=Your Organization"
+chmod 600 "$DIR/server.key"
 ```
 
-This example uses `mcp-remote` with fixed OAuth callback ports:
+- `server.key` — the private key. `chmod 600`, **outside the repo**, never
+  committed and never synced through git.
+- `server.crt` — the public certificate. Uploaded to the External Client App in
+  Part 2.
 
-| Server | Port | Callback URL |
-| --- | --- | --- |
-| `platform/sobject-all` | `8080` | `http://localhost:8080/oauth/callback` |
-| `platform/salesforce-api-context` | `8081` | `http://localhost:8081/oauth/callback` |
-| `platform/metadata-experts` | `8082` | `http://localhost:8082/oauth/callback` |
+## Part 2: Create the External Client App (once per org)
 
-Replace every `PASTE_EXTERNAL_CLIENT_APP_CONSUMER_KEY_HERE` with the Consumer Key from the External Client App.
+Salesforce Setup → **External Client App Manager** → **New External Client App**.
 
-### Claude
+Do not create a classic Connected App. Salesforce's guidance for new integrations
+is the External Client App, and some of the settings below do not exist on the
+older object.
 
-For local Claude Code, use:
+1. **Basic Information:** name it `GTM Stack Operator`, add a contact email, and
+   set Distribution State to **Local**.
+2. **API (Enable OAuth Settings)** → tick **Enable OAuth**.
+   - Callback URL: `http://localhost:1717/OauthRedirect`. This is a required
+     field that JWT never actually uses — fill it in and move on.
+   - OAuth scopes: **Manage user data via APIs (`api`)** and **Perform requests
+     at any time (`refresh_token`, `offline_access`)**.
+3. **Flow Enablement** → tick **Enable JWT Bearer Flow**, then upload
+   `server.crt`. Leave Client Credentials, Authorization Code, Device, and Token
+   Exchange **off**.
+4. **Security** — one setting here is a trap:
+   - **Uncheck _Issue JSON Web Token (JWT)-based access tokens for named
+     users_.** This is *not* the JWT login flow. It controls the *format of the
+     access token you get back*, and JWT-format tokens are rejected by the SOAP
+     Metadata API with `INVALID_SESSION_ID` — so metadata and flow deploys break
+     while REST and Bulk keep working, which is a miserable thing to debug.
+     Opaque tokens work everywhere. The JWT Bearer *flow* from step 3 stays on;
+     these are two different settings with nearly the same name.
+   - Leave *Require secret for Web Server Flow* and *Require secret for Refresh
+     Token Flow* **off**.
+   - *Require PKCE* is irrelevant to JWT — harmless either way.
+5. Save, then open **Settings → OAuth Settings → Consumer Key and Secret** and
+   copy the **Consumer Key**.
+
+New apps can take a few minutes to propagate, and Salesforce says up to 30 for
+some settings. An immediate failure right after saving is usually that, not a
+mistake in the config.
+
+## Part 3: Pre-authorize your user (the JWT gotcha)
+
+JWT bearer has **no interactive consent screen**. If the user is not
+pre-authorized, login fails with `user hasn't approved this consumer` and there
+is no browser prompt to fall back on.
+
+1. On the External Client App → **Policies → OAuth Policies → Permitted Users**
+   → **Admin approved users are pre-authorized**.
+2. Assign your user through a permission set or profile tied to the app. A
+   permission set named something like `GTM Stack Operator Access`, assigned only
+   to the operators who should have this, is the right granularity — do not leave
+   the app open to all users.
+3. Confirm the user has **API Enabled**.
+
+## Part 4: Store the Consumer Key and log in
+
+Keep the Consumer Key out of the repo — an environment variable, or a local
+gitignored config file outside it:
 
 ```bash
-examples/claude-salesforce-hosted-mcp.json
+# ~/.config/gtm-operator/salesforce-jwt/env   (outside the repo)
+export SALESFORCE_JWT_CLIENT_ID="<Consumer Key>"
+export SF_TARGET_ORG="my-org"
 ```
 
-It uses the same `mcp-remote` ports and callback URLs as Codex.
-
-For Claude's hosted web connector UI:
-
-1. Open Claude.
-2. Go to **Customize**.
-3. Go to **Connectors**.
-4. Click **+**.
-5. Click **Add custom connector**.
-6. Add one connector per Salesforce server.
-7. Paste the Salesforce MCP server URL.
-8. In **Advanced settings**, paste the External Client App Consumer Key into **OAuth Client ID**.
-9. Click **Add**.
-10. Click **Connect** and complete the Salesforce OAuth flow.
-
-Use callback URL `https://claude.ai/api/mcp/auth_callback` instead of the localhost callback URLs.
-
-## Part 4: Human Authentication Flow
-
-Do this once per operator per MCP client.
-
-1. Decide whether you are connecting sandbox or production.
-2. In your default browser, log out of other Salesforce orgs.
-3. Log into the exact Salesforce org you want the MCP client to access.
-   - For sandbox work, log into the sandbox.
-   - For production work, log into production.
-4. Keep that browser open.
-5. In Codex or local Claude Code, start the MCP server entry. `mcp-remote` opens the Salesforce OAuth browser flow and listens on the matching localhost callback port.
-6. The client opens a Salesforce OAuth browser flow.
-7. Approve access for the External Client App.
-8. Return to the MCP client.
-9. Repeat for each Salesforce Hosted MCP server you enable:
-   - `platform/sobject-all`
-   - `platform/salesforce-api-context`
-   - `platform/metadata-experts`
-
-The OAuth token storage belongs to the MCP client. This repo never stores Salesforce access tokens or refresh tokens.
-
-## Part 6: Bulk API 2.0 Access
-
-Bulk API 2.0 is how record changes at any real volume get made — backfilling a
-field, re-owning a segment, re-stamping campaign members. It is a normal part of
-operating the stack, not an exception.
-
-**In most cases there is nothing to set up.** The bulk scripts use whatever
-session the `sf` CLI already holds:
+Then log in. Headless, and it runs as you:
 
 ```bash
-sf org login web --alias my-org     # or the JWT flow in Part 5
-export SF_TARGET_ORG=my-org
+source ~/.config/gtm-operator/salesforce-jwt/env
+sf org login jwt \
+  --username <your-salesforce-username> \
+  --jwt-key-file ~/.config/gtm-operator/salesforce-jwt/server.key \
+  --client-id "$SALESFORCE_JWT_CLIENT_ID" \
+  --instance-url https://login.salesforce.com \
+  --alias "$SF_TARGET_ORG" --set-default
 ```
 
-That is it — bulk works from there, including headless when the CLI was
-authenticated with JWT. Credentials resolve in this order:
+For a sandbox, use `--instance-url https://test.salesforce.com` and the sandbox
+username (which usually has a suffix like `.sandboxname`).
+
+## Part 5: Acceptance test
+
+```bash
+sf org display --target-org "$SF_TARGET_ORG"
+sf data query --query "SELECT Id, Name FROM Account LIMIT 1" --target-org "$SF_TARGET_ORG"
+node scripts/flow.mjs list --active
+```
+
+If those three return, the CLI and the scripts are wired at the right level and
+running as you.
+
+## The node scripts reuse this session
+
+`scripts/salesforce_bulk_ingest.mjs`, `scripts/salesforce_metadata_deploy.mjs`,
+and `scripts/salesforce_query_export.mjs` read the access token and instance URL
+from `sf org display --json` rather than holding OAuth of their own. **There is
+no second login to maintain** — bulk, metadata, and exports all inherit the JWT
+session, which is what makes unattended runs possible.
+
+Credentials resolve in this order, so you can override when you need to:
 
 1. `SALESFORCE_ACCESS_TOKEN` + `SALESFORCE_INSTANCE_URL` in the environment
 2. a session file named by `--session-path` or `SALESFORCE_BULK_SESSION_PATH`
-3. the `sf` CLI's current session
-4. a stored OAuth session from the helper below, if one exists
+3. the `sf` CLI's current session — the normal path
+4. a stored OAuth session from `scripts/salesforce_bulk_oauth.mjs`, if one exists
 
-Bulk API requires the External Client App to include the `api` scope. If you add
-that scope after an operator has already authenticated, have them authenticate
-again so the new token carries it.
+## Cross-machine note
 
-### Standalone bulk credentials (optional)
-
-Only needed when bulk should run independently of the CLI — a context with no
-`sf` installed, for instance:
-
-```bash
-node scripts/salesforce_bulk_oauth.mjs login
-```
-
-The helper uses the same `SALESFORCE_MCP_CLIENT_ID` and stores a local,
-gitignored session at:
-
-```text
-plugins/hubspot-operator/.salesforce-bulk-session.json
-```
-
-That session expires on its own schedule and does not self-renew the way the CLI
-does, which is the main reason to prefer the CLI path.
-
-Run an ingest job:
-
-```bash
-node scripts/salesforce_bulk_ingest.mjs \
-  --object Account \
-  --operation update \
-  --csv ~/gtm-operator-output/outputs/salesforce-bulk/account-update.csv \
-  --output-dir ~/gtm-operator-output/outputs/salesforce-bulk/account-update-results
-```
-
-For update jobs, the CSV must include `Id` and the exact field API names to change. The script saves the created/closed/final job payloads plus success, failure, and unprocessed-record CSVs.
-
-Record data never lands in the repo. Omit `--output-dir` and the script writes to the output root on its own (`GTM_OUTPUT_ROOT`, default `~/gtm-operator-output`); pass it only to override. A relative path is resolved against your shell's working directory, so prefer an absolute one.
-
-## Part 5: Acceptance Test
-
-After connecting all three servers, ask Codex or Claude Code to:
-
-1. Inspect the current Salesforce user and org context.
-2. Query one harmless Account or Contact with SOQL.
-3. Inspect schema/relationship metadata for Account or Contact.
-4. Retrieve metadata context for `CustomObject`, `Flow`, or `ValidationRule`.
-5. Run a harmless metadata-expert generated-output action in sandbox.
-6. Demonstrate that it asks before any delete, broad update, bulk metadata change, or production-impacting action.
-
-If the agent can do those things, Salesforce is connected at the right level.
+The private key and the Consumer Key are per-machine local state, like `~/.sf`,
+and never live in git. On a new machine, repeat Part 1 and Part 4 — either
+generate a fresh keypair and upload its certificate to the same app (an app can
+hold more than one) or copy the existing key across securely — then
+`sf org login jwt` again.
 
 ## Troubleshooting
 
-- If auth goes to the wrong org, log out of all Salesforce orgs in your default browser, log into the target org only, and retry.
-- If the server does not connect, confirm the URL matches the org type: sandbox URLs include `/sandbox/`; production URLs do not.
-- If all servers fail, test `platform/sobject-all` first.
-- Confirm the External Client App is available; new apps can take up to 30 minutes.
-- Confirm the org edition supports API access.
-- Confirm the hosted MCP servers are activated in Salesforce Setup.
-- Confirm the user has the required permission set and normal Salesforce object/metadata permissions.
-
-## Operating Rules
-
-- Prefer Salesforce Hosted MCP tools over browser automation.
-- Use `platform/sobject-all` for live CRM data.
-- Use `platform/salesforce-api-context` before generating or editing metadata files.
-- Use `platform/metadata-experts` for metadata-type-specific generation and expert actions.
-- Ask for explicit confirmation before destructive deletes, broad mutations, bulk metadata changes, or production-impacting actions.
-- For production work, report the org/user context before acting.
+| Symptom | Cause |
+| --- | --- |
+| `user hasn't approved this consumer` | Part 3 not done, or the user is not assigned to the app |
+| `invalid_grant` / `invalid_assertion` | Wrong username, cert and key do not match, or the app has not finished propagating |
+| `INVALID_SESSION_ID` on a metadata deploy | *Issue JWT-based access tokens* is still checked — uncheck it (Part 2.4) and log in again |
+| Authenticated against the wrong org | Check `--instance-url` (`login` vs `test`) and the username |
+| A bulk job 401s mid-run | The CLI session expired; `sf org login jwt …` again |
 
 ## References
 
-- Hosted MCP overview: https://developer.salesforce.com/docs/platform/hosted-mcp-servers/guide/hosted-mcp-servers-overview.html
-- Create an External Client App: https://developer.salesforce.com/docs/platform/hosted-mcp-servers/guide/create-external-client-app.html
-- Connect MCP clients: https://developer.salesforce.com/docs/platform/hosted-mcp-servers/guide/client-connection-overview.html
-- Log into the target org before connecting: https://developer.salesforce.com/docs/platform/hosted-mcp-servers/guide/log-into-org.html
-- Connection URL formats: https://developer.salesforce.com/docs/platform/hosted-mcp-servers/guide/connection-issues.html
-- Metadata API Context MCP: https://developer.salesforce.com/docs/platform/einstein-for-devs/guide/apicontextmcp.html
-- Metadata Experts MCP: https://developer.salesforce.com/docs/platform/einstein-for-devs/guide/mdexperts.html
+- OAuth 2.0 JWT Bearer flow:
+  <https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_jwt_flow.htm>
+- `sf org login jwt --help`
+
+---
+
+# Appendix: Salesforce Hosted MCP (optional)
+
+Salesforce hosts MCP servers that give an agent schema awareness and
+metadata-type expertise. They are **optional** and complementary — useful for
+*understanding* an org, not for changing it in bulk, since they operate a record
+at a time. Nothing in this repo requires them.
+
+If you want them, the ready-made client configs are in
+[`examples/`](examples/):
+
+- [`examples/claude-salesforce-hosted-mcp.json`](examples/claude-salesforce-hosted-mcp.json)
+- [`examples/codex-salesforce-hosted-mcp.toml`](examples/codex-salesforce-hosted-mcp.toml)
+
+Both use `mcp-remote` with fixed OAuth callback ports:
+
+| Server | Port | Use |
+| --- | --- | --- |
+| `platform/sobject-all` | `8080` | SObject CRUD, SOQL/SOSL, schema, relationships |
+| `platform/salesforce-api-context` | `8081` | Metadata and Tooling API context, payload rules |
+| `platform/metadata-experts` | `8082` | Metadata-type expert actions |
+
+Production URLs are `https://api.salesforce.com/platform/mcp/v1/platform/<server>`;
+sandbox inserts `/sandbox` before `/platform/<server>`.
+
+To use them, the External Client App also needs the **Access MCP servers
+(`mcp_api`)** scope, the three localhost callback URLs
+(`http://localhost:8080/oauth/callback` and `:8081`, `:8082`) added one per line,
+and **Require PKCE** ticked. Then replace
+`PASTE_EXTERNAL_CLIENT_APP_CONSUMER_KEY_HERE` in the example file with your
+Consumer Key, and authorize each server once in the browser.
+
+This is a separate authorization from the JWT login — the MCP client owns those
+tokens, and this repo never stores them.

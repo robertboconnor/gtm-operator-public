@@ -39,6 +39,17 @@
         "--static-oauth-client-info",
         "{\"client_id\":\"PASTE_EXTERNAL_CLIENT_APP_CONSUMER_KEY_HERE\",\"client_secret\":\"\"}"
       ]
+    },
+    "salesforce-sobject-deletes": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@0.1.37",
+        "https://api.salesforce.com/platform/mcp/v1/platform/sobject-deletes",
+        "8083",
+        "--static-oauth-client-info",
+        "{\"client_id\":\"PASTE_EXTERNAL_CLIENT_APP_CONSUMER_KEY_HERE\",\"client_secret\":\"\"}"
+      ]
     }
   }
 }
