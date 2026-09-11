@@ -76,17 +76,25 @@ not a problem.
 
 Then wire the agent to the servers:
 
-- **Claude Code** reads [`.mcp.json`](.mcp.json) from the repo root — it launches
-  the local HubSpot and Outreach servers and the Salesforce Hosted MCP servers.
+- **Claude Code** reads [`.mcp.json`](.mcp.json) from the repo root.
 - **Codex** reads [`.codex/config.toml`](.codex/config.toml).
-- Replace `YOUR_SALESFORCE_CONNECTED_APP_CLIENT_ID` with the External Client
-  App's Consumer Key in whichever file applies.
 
-For the Salesforce scripts:
+Both launch the two local servers this repo owns — HubSpot and Outreach. Nothing
+else needs wiring; Salesforce is the CLI, not an MCP server. (Salesforce's own
+Hosted MCP servers are optional and live in [`examples/`](examples/) — add them
+only if the operator wants schema intelligence on top.)
+
+Salesforce, once the one-time setup below is done:
 
 ```bash
-sf org login web --alias my-org
-export SF_TARGET_ORG=my-org
+source ~/.config/gtm-operator/salesforce-jwt/env   # SALESFORCE_JWT_CLIENT_ID, SF_TARGET_ORG
+sf org login jwt \
+  --username <their-salesforce-username> \
+  --jwt-key-file ~/.config/gtm-operator/salesforce-jwt/server.key \
+  --client-id "$SALESFORCE_JWT_CLIENT_ID" \
+  --instance-url https://login.salesforce.com \
+  --alias "$SF_TARGET_ORG" --set-default
+
 node scripts/flow.mjs list --active     # a read; safe to run
 ```
 
@@ -132,62 +140,74 @@ from there. A HubSpot 403 names the scope it wanted, so adding them reactively
 is fast and leaves the token no broader than the job needs. Scopes can be
 edited on the app afterward without reissuing the token.
 
-### Salesforce: an External Client App
+### Salesforce: an External Client App + JWT
 
-**Do not create a classic Connected App.** Salesforce's Hosted MCP
-authentication requires an *External Client App*; the older Connected App will
-appear to work and then fail at authorization. Full detail lives in
-[SALESFORCE_SETUP.md](SALESFORCE_SETUP.md) — this is the short version.
+Salesforce here is the **`sf` CLI authenticated headlessly via JWT**, because
+operators work in sets and the CLI is what reaches Bulk API 2.0 and the Metadata
+API. Full detail in [SALESFORCE_SETUP.md](SALESFORCE_SETUP.md); this is the
+short version.
 
-1. Salesforce **Setup** → search **External Client App Manager** → **New
-   External Client App**.
-2. **Basic Information**: name it `GTM Stack Operator`, contact email is the
-   systems owner. Leave distribution internal.
-3. Expand **API (Enable OAuth Settings)** and tick **Enable OAuth**.
-4. **Callback URL** — add all three, one per line. The ports are fixed because
-   the MCP client binds them:
+**Do not create a classic Connected App** — use an External Client App.
+
+1. Generate a keypair on their machine, outside the repo:
+   ```bash
+   DIR="$HOME/.config/gtm-operator/salesforce-jwt"
+   mkdir -p "$DIR" && chmod 700 "$DIR"
+   openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+     -keyout "$DIR/server.key" -out "$DIR/server.crt" \
+     -subj "/CN=gtm-operator-jwt/O=Your Organization"
+   chmod 600 "$DIR/server.key"
    ```
-   http://localhost:8080/oauth/callback
-   http://localhost:8081/oauth/callback
-   http://localhost:8082/oauth/callback
+2. Salesforce **Setup → External Client App Manager → New External Client App**.
+   Name it `GTM Stack Operator`, Distribution State **Local**.
+3. **API (Enable OAuth Settings)** → Enable OAuth. Callback URL
+   `http://localhost:1717/OauthRedirect` (required field, unused by JWT). Scopes:
+   **Manage user data via APIs (`api`)** and **Perform requests at any time
+   (`refresh_token`, `offline_access`)**.
+4. **Flow Enablement** → tick **Enable JWT Bearer Flow** and upload
+   `server.crt`. Leave Client Credentials, Authorization Code, Device, and Token
+   Exchange off.
+5. **Security** → **uncheck _Issue JSON Web Token (JWT)-based access tokens for
+   named users_.** This is the single most confusing setting in the whole setup.
+   It is *not* the login flow from step 4 — it controls the **format of the
+   access token**, and JWT-format tokens are rejected by the SOAP Metadata API
+   with `INVALID_SESSION_ID`. Leave it on and REST and Bulk work fine while every
+   metadata and flow deploy fails, which is a genuinely awful thing to debug.
+   Opaque tokens work everywhere.
+6. **Pre-authorize the user**, or JWT login fails with `user hasn't approved this
+   consumer` and there is no consent screen to fall back on: **Policies → OAuth
+   Policies → Permitted Users → Admin approved users are pre-authorized**, then
+   assign the user via a permission set. Confirm they have **API Enabled**.
+7. Copy the **Consumer Key** from **Settings → OAuth Settings**. Keep it in the
+   environment, never in the repo:
+   ```bash
+   export SALESFORCE_JWT_CLIENT_ID="<Consumer Key>"
+   export SF_TARGET_ORG="my-org"
    ```
-5. **OAuth scopes** — add all three:
-   - **Access MCP servers** (`mcp_api`)
-   - **Manage user data via APIs** (`api`) — also what the `sf` CLI, metadata
-     deploys, and Bulk API 2.0 run on
-   - **Perform requests at any time** (`refresh_token`)
-6. Under **Security**, tick:
-   - **Require Proof Key for Code Exchange (PKCE)**
-   - **Issue JSON Web Token (JWT)-based access tokens for named users** — tick
-     this even if they plan to log in through a browser today. It costs nothing
-     now and is the only way to run headless later, and turning it on afterward
-     means re-approving the app.
-7. Leave everything else under Security unticked unless a vendor says otherwise
-   — especially *Enable Client Credentials Flow* and the *Require Secret*
-   options, which change the auth shape the MCP client expects.
-8. **Create**, then wait. **Salesforce can take up to 30 minutes** to make the
-   app available. An immediate authorization failure is usually this, not a
-   misconfiguration — have them wait before changing anything.
-9. Open the app's **Settings → OAuth Settings → Consumer Key and Secret** and
-   copy the **Consumer Key**. That is the OAuth client ID for every MCP entry.
-   The Consumer Secret is not needed for local PKCE clients — do not put it in
-   the repo.
-10. Replace `YOUR_SALESFORCE_CONNECTED_APP_CLIENT_ID` in
-    [`.mcp.json`](.mcp.json) or [`.codex/config.toml`](.codex/config.toml) with
-    that Consumer Key.
+8. Log in:
+   ```bash
+   sf org login jwt \
+     --username <their-salesforce-username> \
+     --jwt-key-file ~/.config/gtm-operator/salesforce-jwt/server.key \
+     --client-id "$SALESFORCE_JWT_CLIENT_ID" \
+     --instance-url https://login.salesforce.com \
+     --alias "$SF_TARGET_ORG" --set-default
+   ```
+   Sandbox uses `https://test.salesforce.com` and the sandbox username.
+9. Acceptance test — all three should return:
+   ```bash
+   sf org display --target-org "$SF_TARGET_ORG"
+   sf data query --query "SELECT Id, Name FROM Account LIMIT 1" --target-org "$SF_TARGET_ORG"
+   node scripts/flow.mjs list --active
+   ```
 
-**Then restrict it**, which most people skip: create a permission set (e.g.
-`GTM Stack Operator MCP Access`), assign it only to the operators who should
-have this, and under the app's **OAuth Policies** require that permission set
-for pre-authorization. Without this the app is available far more broadly than
-intended. Do not add IP restrictions unless the client's egress is known.
+New apps take a few minutes to propagate. An immediate failure right after saving
+is usually that — have them wait before changing anything.
 
-For the `sf` CLI itself:
-
-```bash
-sf org login web --alias my-org      # or the JWT flow under Headless Auth
-export SF_TARGET_ORG=my-org
-```
+**Every script inherits this login.** Bulk, metadata deploy, and query export all
+read the session from `sf org display --json`, so there is no second OAuth to set
+up. Salesforce's Hosted MCP servers are optional and separate — see the appendix
+in SALESFORCE_SETUP.md.
 
 ## Authoring flows and metadata
 

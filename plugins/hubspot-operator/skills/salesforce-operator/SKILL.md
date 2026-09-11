@@ -1,6 +1,6 @@
 ---
 name: salesforce-operator
-description: Use when operating Salesforce for GTM ops — SObject CRUD and SOQL via Hosted MCP, Flow inspect/deploy/activate/delete via the sf CLI and scripts/flow.mjs, and bulk record mutations via Bulk API 2.0. Reads run freely; every mutation is preview-first and needs an explicit apply.
+description: Use when operating Salesforce for GTM ops — SOQL and record CRUD via the sf CLI, Flow inspect/create/deploy/activate/delete via scripts/flow.mjs, mass mutations via Bulk API 2.0, and metadata retrieve/deploy. Auth is headless JWT. Reads run freely; every mutation is preview-first and needs an explicit apply.
 ---
 
 # Salesforce Operator
@@ -13,26 +13,25 @@ Four lanes, four jobs. Do not cross them.
 
 | Job | Tool |
 | --- | --- |
-| Record data — read, single writes, schema, relationships | Hosted MCP `sobject-all` |
-| Record data — mass mutation, any volume the MCP would have to loop over | `scripts/salesforce_bulk_ingest.mjs` (Bulk API 2.0) |
+| Record data — SOQL reads, single and small writes, describe | `sf data query` / `sf data get\|create\|update\|delete record` |
+| Record data — mass mutation, any change that is a set rather than a record | `scripts/salesforce_bulk_ingest.mjs` (Bulk API 2.0) |
+| Record data — SOQL to CSV | `scripts/salesforce_query_export.mjs` |
 | **Flows — list, inspect, retrieve, diff, deploy, activate, delete** | **`scripts/flow.mjs`** (wraps sf CLI) |
-| Other metadata — generate/edit files, type rules | Hosted MCP `salesforce-api-context` + `metadata-experts`, deploy via `scripts/salesforce_metadata_deploy.mjs` |
+| Other metadata — retrieve, edit, deploy | `sf project retrieve\|deploy` + `scripts/salesforce_metadata_deploy.mjs` |
+| Schema/metadata *understanding* (optional) | Hosted MCP `salesforce-api-context` + `metadata-experts`, if the operator has wired them |
 
 **Do not route a single-record change through the async Bulk API.** Single-record writes are synchronous and immediate; Bulk is a create-job → upload → poll → close cycle that only pays for itself at scale. Do not use browser automation unless every tool above fails and the user explicitly asks for it.
 
 ## Org Context
 
-The operator is the Salesforce owner with full admin rights, and **production is the normal working target** — do not reflexively push work to sandbox. The sf CLI is authed against your org (`~/.sf`, outside the repo); the default target org name is set via `SF_TARGET_ORG` (see `.mcp.json` / scripts). State the org before mutating.
+The operator is the Salesforce owner with full admin rights, and **production is the normal working target** — do not reflexively push work to sandbox. The sf CLI is authenticated headlessly via the JWT Bearer flow (`~/.sf`, outside the repo) and every action is attributed to the named user it logged in as. `SF_TARGET_ORG` selects the org. State the org before mutating: `sf org display --target-org "$SF_TARGET_ORG"`.
 
 The protection here is not "avoid prod." It is **preview-first**: show the plan, get an explicit yes, then apply.
 
-## Headless Auth
+## Auth
 
-`sf org login web` opens a browser, which is fine at a desk and useless from
-cron, CI, or a container. The same External Client App can issue **JWT bearer**
-tokens for unattended runs — tick *Issue JSON Web Token (JWT)-based access tokens
-for named users* on the app (see
-[SALESFORCE_SETUP.md](../../../../SALESFORCE_SETUP.md)), then:
+The CLI logs in headlessly with the **JWT Bearer flow** — no browser, no consent
+tab, and it works the same from a laptop, cron, or a container:
 
 ```bash
 sf org login jwt \
@@ -43,25 +42,43 @@ sf org login jwt \
   --alias "$SF_TARGET_ORG" --set-default
 ```
 
-Keep the private key outside the repo and `chmod 600`; keep the Consumer Key in
-the environment, never in a committed file. The node scripts reuse whichever
-session the CLI holds — they read the access token and instance URL from
-`sf org display --json` rather than carrying OAuth of their own — so this login
-covers the scripts too.
+The private key stays outside the repo at `chmod 600`; the Consumer Key lives in
+the environment, never in a committed file. Setup is once per machine and once
+per org — see [SALESFORCE_SETUP.md](../../../../SALESFORCE_SETUP.md).
 
-## Expected MCP Surfaces
+**Every script inherits this session.** Bulk, metadata deploy, and query export
+read the token from `sf org display --json` rather than carrying OAuth of their
+own, so there is nothing else to authenticate.
 
-- `platform/sobject-all`: live Salesforce record work, SObject CRUD, SOQL/SOSL, schema/object inspection, and relationship traversal.
-- `platform/salesforce-api-context`: Metadata API and Tooling/Data API context, metadata type discovery, fields/properties, valid sections, constraints, and payload guidance.
+Two failures worth recognizing on sight:
+
+- `user hasn't approved this consumer` — the user was never pre-authorized on the
+  app, and JWT has no consent screen to fall back on.
+- `INVALID_SESSION_ID` on a metadata deploy while REST and Bulk work fine — the
+  app has *Issue JWT-based access tokens* checked. That setting controls token
+  *format*, not the login flow, and JWT-format tokens are rejected by the SOAP
+  Metadata API. Uncheck it and log in again.
+
+## Optional: Salesforce Hosted MCP
+
+Salesforce's own MCP servers add schema awareness and metadata-type expertise.
+They are **optional** — nothing here requires them — and they operate a record at
+a time, so they complement the CLI rather than replacing it. Use them to
+*understand* an org; use the CLI and scripts to change it.
+
+If the operator has wired them (see the appendix in SALESFORCE_SETUP.md):
+
+- `platform/sobject-all`: SObject CRUD, SOQL/SOSL, schema inspection, relationship traversal.
+- `platform/salesforce-api-context`: Metadata and Tooling/Data API context, metadata type discovery, field/property rules, payload guidance.
 - `platform/metadata-experts`: metadata-type-specific expert actions through `execute_metadata_action`.
 
 ## Core Rules
 
 1. Reads run freely. Mutations are preview-first and require an explicit apply.
 2. Confirm the org and user context before production-impacting work.
-3. Use SObject tools for live CRM data: Accounts, Contacts, Leads, Opportunities, Campaigns, Cases, Tasks, Events, custom objects, and related records.
+3. Use `sf data query` and `sf data … record` for live CRM data: Accounts, Contacts, Leads, Opportunities, Campaigns, Cases, Tasks, Events, custom objects, and related records.
 4. Use SOQL/SOSL when the user asks for precise Salesforce data retrieval.
-5. Use API Context tools before generating, editing, or explaining metadata files.
+5. Consult the Metadata API docs — and the Hosted MCP API-context tools if they are wired — before generating, editing, or explaining metadata files.
 6. Ask for explicit confirmation before deletes, broad updates, bulk changes, metadata mutations, deploys, or anything that alters production behavior.
 7. Do not paste OAuth tokens, refresh tokens, session IDs, or secrets into files or chat.
 8. If a capability is unavailable, say exactly what is missing before suggesting a fallback.
@@ -130,7 +147,7 @@ Retrieved metadata is the operator's org configuration, never repo content.
 - Inspect object/schema details before mutating unfamiliar standard or custom objects.
 - Use narrow filters and limits for exploratory queries.
 - Prefer exact IDs when updating or deleting records.
-- Use the delete action exposed by `platform/sobject-all` for record removal. Do not simulate deletes by updating `IsDeleted`; Salesforce treats it as a read-only system field.
+- Use `sf data delete record` for removal. Do not simulate deletes by updating `IsDeleted`; Salesforce treats it as a read-only system field.
 - For create/update operations, show the object type, record ID when known, and fields that will change before broad or risky operations.
 - For deletes, always ask for explicit confirmation.
 - After mutation, verify with readback when feasible.
@@ -174,8 +191,8 @@ For an Account update CSV, include `Id` and only the fields that should change. 
 
 ## Metadata Work
 
-- Use API Context tools to discover metadata type names, valid sections, field definitions, property constraints, and examples.
-- Use Metadata Experts tools for metadata-type-specific generation or actions.
+- Retrieve a working example from the org before authoring anything new; it is the most reliable source of valid structure.
+- If the Hosted MCP servers are wired, their API-context and metadata-expert tools are useful for type names, valid sections, and property constraints.
 - Treat Flow, ValidationRule, CustomObject, CustomField, PermissionSet, Profile, FlexiPage, CustomApplication, CustomTab, and Experience metadata as production-impacting unless proven otherwise.
 - Before any metadata mutation or deploy-like action, summarize:
   - target org
@@ -192,10 +209,10 @@ For an Account update CSV, include `Id` and only the fields that should change. 
 
 Only use browser fallback when both are true:
 
-1. the Salesforce MCP servers cannot perform the required operation
+1. the sf CLI and the scripts cannot perform the required operation
 2. the user explicitly asks to continue through the browser
 
-Before browser fallback, state what the MCP tools could not do and what you are about to do in the Salesforce UI.
+Before browser fallback, state what the CLI and scripts could not do and what you are about to do in the Salesforce UI.
 
 ## Reply Shaping
 
