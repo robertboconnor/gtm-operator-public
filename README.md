@@ -9,6 +9,18 @@ CLI scripts for flows, bulk data, metadata, and schema.
 It runs on **macOS and Windows**. Everything here is generic — point it at your
 own HubSpot portal and Salesforce org.
 
+**Start by pointing your agent at it.** Clone the repo, open it in Claude Code or
+Codex, and say *"read AGENTS.md, then help me get this connected to my portal."*
+The agent builds the MCP server, wires itself to it, and walks you through the
+first read against your own data. From there you operate your stack by asking for
+things, not by clicking through them.
+
+[**AGENTS.md**](AGENTS.md) and [**CLAUDE.md**](CLAUDE.md) are that briefing — the
+setup path, the preview-first rules that keep it away from anything you did not
+ask for, and the gotchas already paid for. Unlike a demo repo, **everything here
+talks to production**: there is no sandbox and no fixture data, so the guardrails
+are the point.
+
 > Built by a RevOps operator to run real production changes safely. The design
 > bias throughout is **preview-first**: show the plan, change nothing until
 > explicitly told to.
@@ -23,6 +35,7 @@ own HubSpot portal and Salesforce org.
 | `scripts/salesforce_*.mjs` | Bulk API 2.0 ingest, OAuth helper, metadata deploy, and SOQL export. |
 | `tools/export_salesforce_schema.mjs` | Exports field definitions + DLRS rollup metadata for chosen objects to JSON/CSV. |
 | `plugins/.../skills/` | Agent **skills** (operating instructions) for the HubSpot and Salesforce operators. |
+| `AGENTS.md` + `CLAUDE.md` | The briefing for whatever agent you open this in — setup, guardrails, and the gotchas already paid for. |
 
 ## Requirements
 
