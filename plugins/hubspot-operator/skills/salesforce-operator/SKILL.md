@@ -14,7 +14,7 @@ Four lanes, four jobs. Do not cross them.
 | Job | Tool |
 | --- | --- |
 | Record data — read, single writes, schema, relationships | Hosted MCP `sobject-all` |
-| Record data — mass mutation the MCP can't batch | `scripts/salesforce_bulk_ingest.mjs` (Bulk API 2.0) |
+| Record data — mass mutation, any volume the MCP would have to loop over | `scripts/salesforce_bulk_ingest.mjs` (Bulk API 2.0) |
 | **Flows — list, inspect, retrieve, diff, deploy, activate, delete** | **`scripts/flow.mjs`** (wraps sf CLI) |
 | Other metadata — generate/edit files, type rules | Hosted MCP `salesforce-api-context` + `metadata-experts`, deploy via `scripts/salesforce_metadata_deploy.mjs` |
 
@@ -135,13 +135,33 @@ Retrieved metadata is the operator's org configuration, never repo content.
 - For deletes, always ask for explicit confirmation.
 - After mutation, verify with readback when feasible.
 
-## Bulk API 2.0 Fallback
+## Bulk API 2.0
 
-Use only when all of these are true:
+This is a normal lane, not a last resort. Operators change records in bulk
+constantly — a segment gets re-owned, a field gets backfilled, a campaign's
+members get re-stamped — and looping a single-record API over a few thousand
+rows is the wrong tool for all of it. Reach for Bulk whenever the change is a
+set rather than a record.
 
-1. Salesforce Hosted MCP can identify the records and schema, but cannot batch-update them.
-2. The user explicitly wants a bulk mutation.
-3. The External Client App has `api` scope and the local Bulk API OAuth helper has been run.
+The judgement is about **size, not permission**: single records go through the
+synchronous path because it is immediate, and sets go through Bulk because it is
+built for them. The preview-first rule is unchanged either way — show the count
+and the field changes, get an explicit yes, then run it.
+
+**Auth comes from the `sf` CLI by default.** If the CLI is logged in, the bulk
+scripts use its session; there is no second OAuth to set up. Resolution order:
+
+1. `SALESFORCE_ACCESS_TOKEN` + `SALESFORCE_INSTANCE_URL` in the environment
+2. a session file named explicitly via `--session-path` or `SALESFORCE_BULK_SESSION_PATH`
+3. the `sf` CLI's current session — the normal path, and the one that works headless via JWT
+4. a stored OAuth session from `salesforce_bulk_oauth.mjs`, if one exists
+
+A 401 on a CLI-derived token means the CLI session expired: re-run `sf org login`
+rather than debugging the job. The script says so.
+
+The standalone OAuth helper below still exists for the case where you want bulk
+credentials independent of the CLI — a service context with no `sf` installed,
+say — but it is no longer the setup path.
 
 Scripts:
 

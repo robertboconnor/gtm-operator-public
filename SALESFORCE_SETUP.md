@@ -172,23 +172,50 @@ Do this once per operator per MCP client.
 
 The OAuth token storage belongs to the MCP client. This repo never stores Salesforce access tokens or refresh tokens.
 
-## Part 6: Optional Bulk API 2.0 Access
+## Part 6: Bulk API 2.0 Access
 
-Salesforce Hosted MCP is preferred for normal work. For broad record updates where the hosted server exposes only single-record writes, use the local Bulk API 2.0 helper.
+Bulk API 2.0 is how record changes at any real volume get made — backfilling a
+field, re-owning a segment, re-stamping campaign members. It is a normal part of
+operating the stack, not an exception.
 
-Bulk API requires the External Client App to include the `api` scope. If you add that scope after an operator has already authenticated, have them run OAuth again so the new token includes it.
+**In most cases there is nothing to set up.** The bulk scripts use whatever
+session the `sf` CLI already holds:
 
-Authenticate:
+```bash
+sf org login web --alias my-org     # or the JWT flow in Part 5
+export SF_TARGET_ORG=my-org
+```
+
+That is it — bulk works from there, including headless when the CLI was
+authenticated with JWT. Credentials resolve in this order:
+
+1. `SALESFORCE_ACCESS_TOKEN` + `SALESFORCE_INSTANCE_URL` in the environment
+2. a session file named by `--session-path` or `SALESFORCE_BULK_SESSION_PATH`
+3. the `sf` CLI's current session
+4. a stored OAuth session from the helper below, if one exists
+
+Bulk API requires the External Client App to include the `api` scope. If you add
+that scope after an operator has already authenticated, have them authenticate
+again so the new token carries it.
+
+### Standalone bulk credentials (optional)
+
+Only needed when bulk should run independently of the CLI — a context with no
+`sf` installed, for instance:
 
 ```bash
 node scripts/salesforce_bulk_oauth.mjs login
 ```
 
-The helper uses the same `SALESFORCE_MCP_CLIENT_ID`. It stores a local, gitignored session at:
+The helper uses the same `SALESFORCE_MCP_CLIENT_ID` and stores a local,
+gitignored session at:
 
 ```text
 plugins/hubspot-operator/.salesforce-bulk-session.json
 ```
+
+That session expires on its own schedule and does not self-renew the way the CLI
+does, which is the main reason to prefer the CLI path.
 
 Run an ingest job:
 

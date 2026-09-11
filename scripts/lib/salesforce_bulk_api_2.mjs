@@ -1,6 +1,56 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const defaultSessionPath = "plugins/hubspot-operator/.salesforce-bulk-session.json";
+
+/**
+ * Borrow the session the `sf` CLI already holds.
+ *
+ * The Bulk API is a plain REST call with a bearer token, and the CLI has a live
+ * one — so there is no reason to run a second OAuth dance just to do bulk work.
+ * This also means bulk inherits whatever the CLI authenticated with, JWT
+ * included, which is what makes unattended bulk runs possible at all.
+ *
+ * Returns null rather than throwing when the CLI is absent or has no org, so the
+ * caller can fall through to the other sources.
+ */
+export async function loadSfCliSession(targetOrg = process.env.SF_TARGET_ORG) {
+  const args = ["org", "display", "--json"];
+  if (targetOrg) args.push("--target-org", targetOrg);
+
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync("sf", args, { maxBuffer: 10 * 1024 * 1024 }));
+  } catch (error) {
+    // `sf` missing, not logged in, or no default org. All mean "try something else".
+    // A failed `sf org display` still prints JSON on stdout, so parse it if present.
+    stdout = error.stdout;
+    if (!stdout) return null;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+
+  const result = parsed?.result;
+  if (!result?.accessToken || !result?.instanceUrl) return null;
+
+  return {
+    accessToken: result.accessToken,
+    instanceUrl: result.instanceUrl,
+    username: result.username,
+    alias: result.alias ?? targetOrg,
+    // No refresh token: the CLI owns renewal. On a 401 the fix is `sf org login`,
+    // not a refresh grant from here.
+    source: "sf-cli",
+  };
+}
 
 export function csvEscape(value) {
   if (value === null || value === undefined) return "";
@@ -17,8 +67,22 @@ export function rowsToCsv(rows, columns) {
   return `${lines.join("\n")}\n`;
 }
 
+/**
+ * Resolve credentials for a Bulk API run.
+ *
+ * Explicit beats implicit, and a live session beats a file on disk:
+ *   1. SALESFORCE_ACCESS_TOKEN + SALESFORCE_INSTANCE_URL  (explicit override)
+ *   2. a session path the caller named explicitly           (explicit override)
+ *   3. the `sf` CLI's current session                       (the normal path)
+ *   4. the stored OAuth session file, if one exists         (legacy)
+ *
+ * The CLI comes before the stored file on purpose. A stale session file that
+ * still parses is worse than no file at all: it fails at request time with an
+ * opaque 401 rather than at load time with something you can act on.
+ */
 export async function loadSalesforceSession(options = {}) {
-  const sessionPath = options.sessionPath ?? process.env.SALESFORCE_BULK_SESSION_PATH ?? defaultSessionPath;
+  const explicitPath = options.sessionPath ?? process.env.SALESFORCE_BULK_SESSION_PATH;
+  const sessionPath = explicitPath ?? defaultSessionPath;
 
   if (process.env.SALESFORCE_ACCESS_TOKEN && process.env.SALESFORCE_INSTANCE_URL) {
     return {
@@ -28,14 +92,41 @@ export async function loadSalesforceSession(options = {}) {
       clientId: process.env.SALESFORCE_MCP_CLIENT_ID ?? process.env.SALESFORCE_CLIENT_ID,
       loginUrl: process.env.SALESFORCE_LOGIN_URL,
       sessionPath,
+      source: "env",
     };
   }
 
+  if (explicitPath) {
+    return readSessionFile(explicitPath);
+  }
+
+  const cliSession = await loadSfCliSession();
+  if (cliSession) return { ...cliSession, sessionPath };
+
+  const stored = await readSessionFile(sessionPath).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (stored) return stored;
+
+  throw new Error(
+    "No Salesforce credentials for the Bulk API. Any one of these works:\n" +
+      "  1. Log the CLI in (simplest):  sf org login web --alias my-org && export SF_TARGET_ORG=my-org\n" +
+      "  2. Set SALESFORCE_ACCESS_TOKEN and SALESFORCE_INSTANCE_URL in the environment\n" +
+      "  3. Run scripts/salesforce_bulk_oauth.mjs login for a standalone OAuth session",
+  );
+}
+
+async function readSessionFile(sessionPath) {
   const raw = await fs.readFile(sessionPath, "utf8").catch((error) => {
     if (error.code === "ENOENT") {
-      throw new Error(
-        `Missing Salesforce Bulk API session. Run scripts/salesforce_bulk_oauth.mjs login or set SALESFORCE_ACCESS_TOKEN and SALESFORCE_INSTANCE_URL.`,
+      const missing = new Error(
+        `No Salesforce session file at ${sessionPath}.\n` +
+          "Create one with scripts/salesforce_bulk_oauth.mjs login, or drop the " +
+          "explicit path and let the sf CLI's own session be used.",
       );
+      missing.code = "ENOENT";
+      throw missing;
     }
     throw error;
   });
@@ -43,7 +134,7 @@ export async function loadSalesforceSession(options = {}) {
   if (!session.accessToken || !session.instanceUrl) {
     throw new Error(`${sessionPath} is missing accessToken or instanceUrl.`);
   }
-  return { ...session, sessionPath };
+  return { ...session, sessionPath, source: "file" };
 }
 
 export async function saveSalesforceSession(session, sessionPath = defaultSessionPath) {
@@ -60,9 +151,20 @@ export class SalesforceBulkApi2Client {
 
   async request(path, options = {}) {
     const response = await this.rawRequest(path, options);
-    if (response.status !== 401 || !this.session.refreshToken || !this.session.clientId) {
-      return response;
+    if (response.status !== 401) return response;
+
+    // A CLI-derived token carries no refresh grant — the CLI owns renewal — so
+    // say what to do instead of returning an opaque 401 from deep in a job.
+    if (this.session.source === "sf-cli") {
+      throw new Error(
+        "Salesforce rejected the CLI's access token (401). Re-authenticate the " +
+          "CLI and run this again:\n  sf org login web --alias " +
+          `${this.session.alias ?? "my-org"}\n` +
+          "Or, for headless runs, the JWT login in SALESFORCE_SETUP.md.",
+      );
     }
+
+    if (!this.session.refreshToken || !this.session.clientId) return response;
 
     await this.refreshAccessToken();
     return this.rawRequest(path, options);

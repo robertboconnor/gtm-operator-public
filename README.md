@@ -34,7 +34,8 @@ are the point.
 | Salesforce Hosted MCP | Config to connect the agent to Salesforce's **first-party MCP servers** (sobject CRUD, metadata, schema context) over OAuth. Salesforce owns auth and enforces its own permissions. |
 | `scripts/flow.mjs` | A **Salesforce Flow operator** — list, inspect, diff, and (with `--apply`) deploy/activate/deactivate/delete flows, including **creating new ones**. Every mutation is preview-first. |
 | `force-app/` + `manifest/` | Where metadata lands for read/write work — retrieve a flow, edit it, deploy it back as a new version. Gitignored: it holds your org's config, not this repo's. |
-| `scripts/salesforce_*.mjs` | Bulk API 2.0 ingest, OAuth helper, metadata deploy, and SOQL export. |
+| `scripts/salesforce_*.mjs` | Bulk API 2.0 ingest, OAuth helper, metadata deploy, and SOQL export. Bulk borrows the `sf` CLI's session, so there is no second login to set up. |
+| `tests/` | Hermetic tests — no network, no org, no credentials. `node tests/bulk_auth.test.mjs`. |
 | `tools/export_salesforce_schema.mjs` | Exports field definitions + DLRS rollup metadata for chosen objects to JSON/CSV. |
 | `plugins/.../skills/` | Agent **skills** (operating instructions) for the HubSpot and Salesforce operators. |
 | `AGENTS.md` + `CLAUDE.md` | The briefing for whatever agent you open this in — setup, guardrails, and the gotchas already paid for. |

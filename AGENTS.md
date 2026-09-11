@@ -286,6 +286,10 @@ only then go wider.
   permission problem. Run `outreach.whoami` to see what the token actually
   carries; fixing it means ticking the scope in the developer portal and logging
   in again, not retrying.
+- **Bulk work does not need its own OAuth.** The Bulk API 2.0 scripts read the
+  `sf` CLI's live session by default, so if the CLI is logged in, bulk works.
+  Explicit env vars or an explicitly named session file override it. A 401 on a
+  CLI token means re-run `sf org login`, not debug the job.
 - **Salesforce Hosted MCP is first-party.** Salesforce owns the OAuth and
   enforces its own permissions — if a call is refused, that is the org's
   permission model talking, and the fix is in Salesforce, not here.
