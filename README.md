@@ -1,10 +1,10 @@
 # GTM Operator
 
-A toolkit for operating a go-to-market stack — **HubSpot** and **Salesforce** —
-from an AI coding agent (**Claude Code** or **Codex**). It gives the agent
-deterministic, permissioned tools instead of brittle clicking: a local HubSpot
-MCP server, first-party Salesforce Hosted MCP servers, and a set of Salesforce
-CLI scripts for flows, bulk data, metadata, and schema.
+A toolkit for operating a go-to-market stack — **HubSpot**, **Salesforce**, and
+**Outreach** — from an AI coding agent (**Claude Code** or **Codex**). It gives
+the agent deterministic, permissioned tools instead of brittle clicking: local
+HubSpot and Outreach MCP servers, first-party Salesforce Hosted MCP servers, and
+a set of Salesforce CLI scripts for flows, bulk data, metadata, and schema.
 
 It runs on **macOS and Windows**. Everything here is generic — point it at your
 own HubSpot portal and Salesforce org.
@@ -29,7 +29,8 @@ are the point.
 
 | Piece | What it does |
 | --- | --- |
-| `plugins/hubspot-operator/` | A local **HubSpot MCP server** (TypeScript) exposing deterministic tools for workflows, CRM records, lists/segments, and users. |
+| `plugins/hubspot-operator/` | A local **HubSpot MCP server** (TypeScript) exposing deterministic tools for workflows, CRM records, lists/segments, users, marketing emails, property definitions, and property/import history. |
+| `plugins/outreach-operator/` | A local **Outreach MCP server** over the Outreach REST API v2 — prospects, accounts, sequences, sequence enrollment, templates, and custom fields. OAuth, authorized once per machine. |
 | Salesforce Hosted MCP | Config to connect the agent to Salesforce's **first-party MCP servers** (sobject CRUD, metadata, schema context) over OAuth. Salesforce owns auth and enforces its own permissions. |
 | `scripts/flow.mjs` | A **Salesforce Flow operator** — list, inspect, diff, and (with `--apply`) deploy/activate/deactivate/delete flows. Every mutation is preview-first. |
 | `scripts/salesforce_*.mjs` | Bulk API 2.0 ingest, OAuth helper, metadata deploy, and SOQL export. |
@@ -42,6 +43,7 @@ are the point.
 - **Node.js** 20+ and **npm**
 - **Salesforce CLI** (`sf`) — for the flow/metadata/data scripts ([install](https://developer.salesforce.com/tools/salesforcecli))
 - A **HubSpot private app token** — for the HubSpot MCP server
+- An **Outreach OAuth application** (client id + secret) — for the Outreach MCP server; see [`plugins/outreach-operator/README.md`](plugins/outreach-operator/README.md)
 - A **Salesforce External Client App** (OAuth) — for the Salesforce Hosted MCP servers (see [SALESFORCE_SETUP.md](SALESFORCE_SETUP.md))
 - **Claude Code** or **Codex** as the agent front-end
 

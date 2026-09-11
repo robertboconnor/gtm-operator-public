@@ -1,0 +1,37 @@
+{
+  "name": "outreach-operator",
+  "version": "0.1.0",
+  "description": "Operate Outreach through local MCP tools over the Outreach REST API v2, with OAuth handled once per machine and every mutation gated behind an explicit confirmation.",
+  "author": {
+    "name": "Roberto O'Connor"
+  },
+  "license": "MIT",
+  "keywords": [
+    "gtm",
+    "outreach",
+    "sales engagement",
+    "mcp",
+    "sequences",
+    "prospects"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Outreach Operator",
+    "shortDescription": "Use your agent directly as your Outreach operator",
+    "longDescription": "A local plugin that gives Claude Code and Codex deterministic Outreach tools — prospects, accounts, sequences, sequence states, templates and snippets — over the Outreach REST API v2.",
+    "developerName": "Roberto O'Connor",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Find this prospect in Outreach and show their sequence history",
+      "Which sequences are active and who owns them?",
+      "Show the custom field definitions on Prospect",
+      "Enroll these prospects into a sequence"
+    ]
+  }
+}

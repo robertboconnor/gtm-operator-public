@@ -25,6 +25,15 @@ import {
   usersUpdate,
   usersUpdatePermissionSet,
 } from "./users.js";
+import { workflowsAddEmailBranch } from "./branches.js";
+import { marketingEmailsSearch } from "./emails.js";
+import { propertiesGet, propertiesList } from "./properties.js";
+import {
+  crmImportHistory,
+  crmPropertyHistory,
+  importsGet,
+  importsList,
+} from "./history.js";
 import {
   workflowsAddGoToWorkflowStep,
   workflowsCloneBasic,
@@ -198,6 +207,50 @@ server.registerTool(
   },
   async (input) => {
     const result = await workflowsAddGoToWorkflowStep(input);
+    return {
+      content: [{ type: "text", text: toolTextResult(result) }],
+      structuredContent: result,
+    };
+  },
+);
+
+server.registerTool(
+  "workflows.add_email_branch",
+  {
+    description:
+      "Add a send-email branch to a workflow's LIST_BRANCH step by cloning an existing branch that already works, then swapping in a new match value and new marketing email IDs. Clones the whole action chain, so multi-step branches (send -> owner check -> delay -> send again) keep their shape. Previews by default; pass apply:true to write. Blocked when GTM_READONLY=1.",
+    inputSchema: z.object({
+      workflowId: z.string(),
+      matchValue: z.string(),
+      templateMatchValue: z.string(),
+      emailIds: z.array(z.string()).min(1),
+      branchName: z.string().optional(),
+      apply: z.boolean().optional(),
+    }),
+  },
+  async (input) => {
+    const result = await workflowsAddEmailBranch(input);
+    return {
+      content: [{ type: "text", text: toolTextResult(result) }],
+      structuredContent: result,
+    };
+  },
+);
+
+server.registerTool(
+  "marketing_emails.search",
+  {
+    description:
+      "Search HubSpot marketing emails by name across the whole catalogue. Pages every email before filtering, so it finds older emails that single-page search misses. Returns email IDs for wiring into workflow send steps.",
+    inputSchema: z.object({
+      name: z.string().optional(),
+      exactName: z.string().optional(),
+      state: z.string().optional(),
+      limit: z.number().int().positive().max(200).optional(),
+    }),
+  },
+  async (input) => {
+    const result = await marketingEmailsSearch(input);
     return {
       content: [{ type: "text", text: toolTextResult(result) }],
       structuredContent: result,
@@ -599,6 +652,130 @@ server.registerTool(
   async (input) => {
     const result = await listMembersRemove(input);
     return aliasToolResult(result, "segments.members.remove");
+  },
+);
+
+const crmObjectType = z.enum(["contacts", "companies", "deals", "tickets"]);
+
+server.registerTool(
+  "properties.list",
+  {
+    description:
+      "List the property (field) definitions on a HubSpot object type, including which are calculated and the formula behind them. Returns a compact projection by default because the full contact catalogue is ~1MB — narrow with search or groupName, or pass detail:true for the raw definitions.",
+    inputSchema: z.object({
+      objectType: crmObjectType,
+      search: z.string().optional(),
+      groupName: z.string().optional(),
+      includeArchived: z.boolean().optional(),
+      detail: z.boolean().optional(),
+      limit: z.number().int().positive().max(1000).optional(),
+    }),
+  },
+  async (input) => {
+    const result = await propertiesList(input);
+    return {
+      content: [{ type: "text", text: toolTextResult(result) }],
+      structuredContent: result,
+    };
+  },
+);
+
+server.registerTool(
+  "properties.get",
+  {
+    description:
+      "Fetch one HubSpot property definition by internal name. Shows the data type, whether it is calculated (and its formula), enum options, and number/currency display hints — i.e. how a value will actually render in an email token.",
+    inputSchema: z.object({
+      objectType: crmObjectType,
+      propertyName: z.string(),
+    }),
+  },
+  async (input) => {
+    const result = await propertiesGet(input);
+    return {
+      content: [{ type: "text", text: toolTextResult(result) }],
+      structuredContent: result,
+    };
+  },
+);
+
+server.registerTool(
+  "crm.property_history",
+  {
+    description:
+      "Full change history for properties on a single CRM record: every past value with its timestamp and what wrote it (IMPORT, INTEGRATION, FORM, CRM_UI, WORKFLOW, plus the source id). This is how you find out what a field held at a point in time rather than just what it holds now. Scope with properties[] or propertySearch; omitting both scans every property on the object.",
+    inputSchema: z.object({
+      objectType: crmObjectType,
+      id: z.string(),
+      properties: z.array(z.string()).optional(),
+      propertySearch: z.string().optional(),
+      maxVersions: z.number().int().positive().max(100).optional(),
+      resolveImports: z.boolean().optional(),
+    }),
+  },
+  async (input) => {
+    const result = await crmPropertyHistory(input);
+    return {
+      content: [{ type: "text", text: toolTextResult(result) }],
+      structuredContent: result,
+    };
+  },
+);
+
+server.registerTool(
+  "crm.import_history",
+  {
+    description:
+      "Every CSV import that has written to a single CRM record, with the import's name and run date and the exact values that import set on that record. Reconstructed from per-property change history, so it works for imports run from the HubSpot UI that the imports API will not list. Scope with propertySearch to keep it fast.",
+    inputSchema: z.object({
+      objectType: crmObjectType,
+      id: z.string(),
+      properties: z.array(z.string()).optional(),
+      propertySearch: z.string().optional(),
+    }),
+  },
+  async (input) => {
+    const result = await crmImportHistory(input);
+    return {
+      content: [{ type: "text", text: toolTextResult(result) }],
+      structuredContent: result,
+    };
+  },
+);
+
+server.registerTool(
+  "imports.get",
+  {
+    description:
+      "Fetch one HubSpot import by id: name, run date, state, row counters, and the column-to-property mappings that tell you which spreadsheet column fed which field. Works for UI-run imports even though imports.list will not show them.",
+    inputSchema: z.object({
+      importId: z.string(),
+    }),
+  },
+  async (input) => {
+    const result = await importsGet(input);
+    return {
+      content: [{ type: "text", text: toolTextResult(result) }],
+      structuredContent: result,
+    };
+  },
+);
+
+server.registerTool(
+  "imports.list",
+  {
+    description:
+      "List imports HubSpot attributes to this token's app. Note that imports run from the HubSpot UI are NOT returned here — for those, use crm.import_history on a record to surface the ids, then imports.get.",
+    inputSchema: z.object({
+      limit: z.number().int().positive().max(100).optional(),
+    }),
+  },
+  async (input) => {
+    const result = await importsList(input);
+    return {
+      content: [{ type: "text", text: toolTextResult(result) }],
+      structuredContent: result,
+    };
   },
 );
 
