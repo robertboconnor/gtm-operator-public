@@ -100,8 +100,8 @@ Run a Bulk API ingest update from a CSV:
 node scripts/salesforce_bulk_ingest.mjs \
   --object Account \
   --operation update \
-  --csv ~/Documents/claude/gtm-operator/outputs/salesforce-bulk/account-am-update.csv \
-  --output-dir ~/Documents/claude/gtm-operator/outputs/salesforce-bulk/account-am-update-results
+  --csv ~/gtm-operator-output/outputs/salesforce-bulk/account-am-update.csv \
+  --output-dir ~/gtm-operator-output/outputs/salesforce-bulk/account-am-update-results
 ```
 
 For `update`, the CSV must include `Id` plus the fields to update. The script creates the job, uploads the CSV, closes the job, polls it, and writes:
