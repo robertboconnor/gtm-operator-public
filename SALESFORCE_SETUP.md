@@ -196,13 +196,13 @@ Run an ingest job:
 node scripts/salesforce_bulk_ingest.mjs \
   --object Account \
   --operation update \
-  --csv ~/Documents/claude/gtm-operator/outputs/salesforce-bulk/account-update.csv \
-  --output-dir ~/Documents/claude/gtm-operator/outputs/salesforce-bulk/account-update-results
+  --csv ~/gtm-operator-output/outputs/salesforce-bulk/account-update.csv \
+  --output-dir ~/gtm-operator-output/outputs/salesforce-bulk/account-update-results
 ```
 
 For update jobs, the CSV must include `Id` and the exact field API names to change. The script saves the created/closed/final job payloads plus success, failure, and unprocessed-record CSVs.
 
-Record data never lands in the repo. Omit `--output-dir` and the script writes to the output root on its own (`GTM_OUTPUT_ROOT`, default `~/Documents/claude/gtm-operator`); pass it only to override. A relative path is resolved against your shell's working directory, so prefer an absolute one.
+Record data never lands in the repo. Omit `--output-dir` and the script writes to the output root on its own (`GTM_OUTPUT_ROOT`, default `~/gtm-operator-output`); pass it only to override. A relative path is resolved against your shell's working directory, so prefer an absolute one.
 
 ## Part 5: Acceptance Test
 

@@ -18,13 +18,36 @@ Three tools, three jobs. Do not cross them.
 | **Flows — list, inspect, retrieve, diff, deploy, activate, delete** | **`scripts/flow.mjs`** (wraps sf CLI) |
 | Other metadata — generate/edit files, type rules | Hosted MCP `salesforce-api-context` + `metadata-experts`, deploy via `scripts/salesforce_metadata_deploy.mjs` |
 
-Do not use browser automation unless every tool above fails and the user explicitly asks for it.
+**Do not route a single-record change through the async Bulk API.** Single-record writes are synchronous and immediate; Bulk is a create-job → upload → poll → close cycle that only pays for itself at scale. Do not use browser automation unless every tool above fails and the user explicitly asks for it.
 
 ## Org Context
 
 The operator is the Salesforce owner with full admin rights, and **production is the normal working target** — do not reflexively push work to sandbox. The sf CLI is authed against your org (`~/.sf`, outside the repo); the default target org name is set via `SF_TARGET_ORG` (see `.mcp.json` / scripts). State the org before mutating.
 
 The protection here is not "avoid prod." It is **preview-first**: show the plan, get an explicit yes, then apply.
+
+## Headless Auth
+
+`sf org login web` opens a browser, which is fine at a desk and useless from
+cron, CI, or a container. The same External Client App can issue **JWT bearer**
+tokens for unattended runs — tick *Issue JSON Web Token (JWT)-based access tokens
+for named users* on the app (see
+[SALESFORCE_SETUP.md](../../../../SALESFORCE_SETUP.md)), then:
+
+```bash
+sf org login jwt \
+  --username <your-salesforce-user> \
+  --jwt-key-file ~/.config/gtm-operator/salesforce-jwt/server.key \
+  --client-id "$SALESFORCE_JWT_CLIENT_ID" \
+  --instance-url https://login.salesforce.com \
+  --alias "$SF_TARGET_ORG" --set-default
+```
+
+Keep the private key outside the repo and `chmod 600`; keep the Consumer Key in
+the environment, never in a committed file. The node scripts reuse whichever
+session the CLI holds — they read the access token and instance URL from
+`sf org display --json` rather than carrying OAuth of their own — so this login
+covers the scripts too.
 
 ## Expected MCP Surfaces
 
@@ -44,7 +67,7 @@ The protection here is not "avoid prod." It is **preview-first**: show the plan,
 8. If a capability is unavailable, say exactly what is missing before suggesting a fallback.
 9. For Bulk API 2.0, confirm the object, source rows, field API names, target values, and expected record count before submitting an ingest job.
 10. **Report what actually ran.** A dry-run is not a deploy. A preview is not a change. Never report a mutation that did not commit.
-11. Never write Salesforce or HubSpot record data inside the repo — it contains customer PII. It belongs under the output root (`GTM_OUTPUT_ROOT`, default `~/Documents/claude/gtm-operator`), which lives outside the repo so it can never be committed. In scripts, resolve paths with `outputPath()` / `exportPath()` from `scripts/lib/paths.mjs` rather than writing a relative path. The one exception is `tmp/`, which stays in the repo for ephemeral staging only — never durable data.
+11. Never write Salesforce or HubSpot record data inside the repo — it contains customer PII. It belongs under the output root (`GTM_OUTPUT_ROOT`, default `~/gtm-operator-output`), which lives outside the repo so it can never be committed. In scripts, resolve paths with `outputPath()` / `exportPath()` from `scripts/lib/paths.mjs` rather than writing a relative path. The one exception is `tmp/`, which stays in the repo for ephemeral staging only — never durable data.
 
 ## Flow Operations
 
@@ -95,7 +118,7 @@ Scripts:
 - `scripts/salesforce_bulk_oauth.mjs login`: starts OAuth Authorization Code + PKCE and stores a gitignored local session at `plugins/hubspot-operator/.salesforce-bulk-session.json`.
 - `scripts/salesforce_bulk_ingest.mjs`: creates a Bulk API 2.0 ingest job from a CSV, uploads rows, closes the job, polls status, and writes success/failure CSVs.
 
-These use their own OAuth session, separate from the sf CLI's `~/.sf` auth. **As of 2026-07-16 that session's refresh token is expired** — re-run the login above before the bulk or `salesforce_metadata_deploy.mjs` scripts will work. Flow work via `scripts/flow.mjs` is unaffected; it uses the sf CLI auth.
+These use their own OAuth session, separate from the sf CLI's `~/.sf` auth, and that session expires on its own schedule. If a bulk job or `salesforce_metadata_deploy.mjs` fails on auth, re-run the login above before debugging anything else — an expired refresh token is the usual cause and it does not announce itself clearly. Flow work via `scripts/flow.mjs` is unaffected; it uses the sf CLI auth.
 
 For an Account update CSV, include `Id` and only the fields that should change. Prefer generating the CSV from a SOQL result and keeping the source query, CSV, and Bulk API result files together under `$GTM_OUTPUT_ROOT/outputs/salesforce-bulk/<task-name>/`.
 
