@@ -32,7 +32,8 @@ are the point.
 | `plugins/hubspot-operator/` | A local **HubSpot MCP server** (TypeScript) exposing deterministic tools for workflows, CRM records, lists/segments, users, marketing emails, property definitions, and property/import history. |
 | `plugins/outreach-operator/` | A local **Outreach MCP server** over the Outreach REST API v2 — prospects, accounts, sequences, sequence enrollment, templates, and custom fields. OAuth, authorized once per machine. |
 | Salesforce Hosted MCP | Config to connect the agent to Salesforce's **first-party MCP servers** (sobject CRUD, metadata, schema context) over OAuth. Salesforce owns auth and enforces its own permissions. |
-| `scripts/flow.mjs` | A **Salesforce Flow operator** — list, inspect, diff, and (with `--apply`) deploy/activate/deactivate/delete flows. Every mutation is preview-first. |
+| `scripts/flow.mjs` | A **Salesforce Flow operator** — list, inspect, diff, and (with `--apply`) deploy/activate/deactivate/delete flows, including **creating new ones**. Every mutation is preview-first. |
+| `force-app/` + `manifest/` | Where metadata lands for read/write work — retrieve a flow, edit it, deploy it back as a new version. Gitignored: it holds your org's config, not this repo's. |
 | `scripts/salesforce_*.mjs` | Bulk API 2.0 ingest, OAuth helper, metadata deploy, and SOQL export. |
 | `tools/export_salesforce_schema.mjs` | Exports field definitions + DLRS rollup metadata for chosen objects to JSON/CSV. |
 | `plugins/.../skills/` | Agent **skills** (operating instructions) for the HubSpot and Salesforce operators. |

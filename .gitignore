@@ -29,3 +29,11 @@ tmp/
 
 # Metadata build artifacts (deploy zips, retrieve unpacks)
 *.zip
+
+# Retrieved Salesforce metadata is YOUR org's configuration, not this repo's.
+# The directory and its README ship; anything pulled into it stays local.
+force-app/**
+!force-app/README.md
+manifest/*
+!manifest/package.xml.example
+!manifest/README.md

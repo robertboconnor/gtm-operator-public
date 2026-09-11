@@ -89,6 +89,148 @@ export SF_TARGET_ORG=my-org
 node scripts/flow.mjs list --active     # a read; safe to run
 ```
 
+## Setting the user up
+
+These two walkthroughs are the ones people get wrong, so they live here rather
+than behind a link. Read them out to the user step by step. Both end with a
+secret: never ask them to paste it into chat, and never write it anywhere but
+the `.env` file named below.
+
+### HubSpot: a private app token
+
+HubSpot calls this a "private app." It is a per-portal token, not a per-user
+login, so it carries exactly the scopes you tick and nothing else.
+
+1. In HubSpot, click the **gear icon** (Settings), top right.
+2. In the left sidebar: **Integrations → Private apps**.
+3. Click **Create a private app**. On the **Basic info** tab, name it something
+   a future admin will understand — `GTM Operator (agent)` — and add a
+   description saying which human owns it.
+4. Switch to the **Scopes** tab. This is the part that matters. Tick the scopes
+   for the work you actually intend to do, starting read-only:
+
+   | To do this | Tick |
+   | --- | --- |
+   | Read and search workflows | `automation` |
+   | Read companies/contacts and their associations | `crm.objects.companies.read`, `crm.objects.contacts.read` |
+   | Write CRM properties back | the matching `...write` scopes |
+   | Read and edit lists/segments | `crm.lists.read`, `crm.lists.write` |
+   | Read property definitions | `crm.schemas.companies.read` (and the equivalents per object) |
+   | Read import history | `crm.import` |
+   | Search marketing emails | `content` |
+   | Read or manage users, roles, teams | `settings.users.read`, `settings.users.write`, `settings.users.teams.read` |
+
+5. Click **Create app**, then **Continue creating**.
+6. Copy the token. **HubSpot shows it once.** If they lose it, they rotate it
+   from the same screen rather than recovering it.
+7. It goes in `plugins/hubspot-operator/.env` as
+   `HUBSPOT_ACCESS_TOKEN=...`, which is gitignored.
+
+**Start with read scopes only**, get one `workflows.search` working, and widen
+from there. A HubSpot 403 names the scope it wanted, so adding them reactively
+is fast and leaves the token no broader than the job needs. Scopes can be
+edited on the app afterward without reissuing the token.
+
+### Salesforce: an External Client App
+
+**Do not create a classic Connected App.** Salesforce's Hosted MCP
+authentication requires an *External Client App*; the older Connected App will
+appear to work and then fail at authorization. Full detail lives in
+[SALESFORCE_SETUP.md](SALESFORCE_SETUP.md) — this is the short version.
+
+1. Salesforce **Setup** → search **External Client App Manager** → **New
+   External Client App**.
+2. **Basic Information**: name it `GTM Stack Operator`, contact email is the
+   systems owner. Leave distribution internal.
+3. Expand **API (Enable OAuth Settings)** and tick **Enable OAuth**.
+4. **Callback URL** — add all three, one per line. The ports are fixed because
+   the MCP client binds them:
+   ```
+   http://localhost:8080/oauth/callback
+   http://localhost:8081/oauth/callback
+   http://localhost:8082/oauth/callback
+   ```
+5. **OAuth scopes** — add all three:
+   - **Access MCP servers** (`mcp_api`)
+   - **Manage user data via APIs** (`api`) — also what the `sf` CLI, metadata
+     deploys, and Bulk API 2.0 run on
+   - **Perform requests at any time** (`refresh_token`)
+6. Under **Security**, tick:
+   - **Require Proof Key for Code Exchange (PKCE)**
+   - **Issue JSON Web Token (JWT)-based access tokens for named users** — tick
+     this even if they plan to log in through a browser today. It costs nothing
+     now and is the only way to run headless later, and turning it on afterward
+     means re-approving the app.
+7. Leave everything else under Security unticked unless a vendor says otherwise
+   — especially *Enable Client Credentials Flow* and the *Require Secret*
+   options, which change the auth shape the MCP client expects.
+8. **Create**, then wait. **Salesforce can take up to 30 minutes** to make the
+   app available. An immediate authorization failure is usually this, not a
+   misconfiguration — have them wait before changing anything.
+9. Open the app's **Settings → OAuth Settings → Consumer Key and Secret** and
+   copy the **Consumer Key**. That is the OAuth client ID for every MCP entry.
+   The Consumer Secret is not needed for local PKCE clients — do not put it in
+   the repo.
+10. Replace `YOUR_SALESFORCE_CONNECTED_APP_CLIENT_ID` in
+    [`.mcp.json`](.mcp.json) or [`.codex/config.toml`](.codex/config.toml) with
+    that Consumer Key.
+
+**Then restrict it**, which most people skip: create a permission set (e.g.
+`GTM Stack Operator MCP Access`), assign it only to the operators who should
+have this, and under the app's **OAuth Policies** require that permission set
+for pre-authorization. Without this the app is available far more broadly than
+intended. Do not add IP restrictions unless the client's egress is known.
+
+For the `sf` CLI itself:
+
+```bash
+sf org login web --alias my-org      # or the JWT flow under Headless Auth
+export SF_TARGET_ORG=my-org
+```
+
+## Authoring flows and metadata
+
+This is the work that used to mean clicking through Flow Builder, and it is the
+reason the `sf` CLI lane exists alongside the MCP servers.
+
+**Retrieve a real flow as your template.** Never hand-author flow XML from
+scratch and never copy a generic sample — either one produces metadata that
+fails to deploy over record types, picklist values, and API names it could not
+have known. A flow that already runs in the user's org is correct by
+construction:
+
+```bash
+node scripts/flow.mjs list --active                 # what exists
+node scripts/flow.mjs inspect <ApiName>             # read it
+node scripts/flow.mjs retrieve <ApiName>            # into force-app/main/default/flows/
+```
+
+Copy that file to a new API name, edit the copy, then:
+
+```bash
+node scripts/flow.mjs deploy <NewApiName>           # dry run; prints the plan
+node scripts/flow.mjs deploy <NewApiName> --apply   # creates it
+node scripts/flow.mjs activate <NewApiName> --apply # turn it on
+```
+
+`deploy` covers both create and update — a flow with no counterpart in the org
+reports `currently: (new flow)`. `diff` shows local against deployed before you
+commit to anything.
+
+**Deploying never overwrites.** Every deploy creates a new *version*, and if the
+flow is currently active the new version lands **inactive** until activated
+explicitly. The running version keeps running in the meantime. That is what
+makes iterating against production defensible — but it also means "I deployed
+it" and "it is live" are different claims, and you must not conflate them when
+reporting back.
+
+For changes spanning several components at once — a flow plus the fields it
+reads — use a manifest instead: see [manifest/README.md](manifest/README.md).
+
+**Retrieved metadata is the user's org configuration, not repo content.**
+`force-app/` is gitignored for exactly that reason. Never commit what you pull
+down, and never copy one org's metadata into another without saying so.
+
 ## There is no zero-credential demo
 
 Say this plainly rather than letting someone discover it. Every tool in this repo

@@ -9,7 +9,7 @@ For technical GTM ops operators managing Salesforce as part of the GTM stack.
 
 ## Pick The Right Lane
 
-Three tools, three jobs. Do not cross them.
+Four lanes, four jobs. Do not cross them.
 
 | Job | Tool |
 | --- | --- |
@@ -95,6 +95,36 @@ Salesforce behavior that shapes every flow edit:
 
 The safe edit loop: `retrieve` → edit XML → `diff` → `deploy` (dry-run) → `deploy --apply` → `activate --apply`. Rollback is `activate --version <previous> --apply`.
 
+### Creating a new flow
+
+`deploy` handles a flow that does not exist in the org yet — it reports
+`currently: (new flow)` — so create and update are the same command. What differs
+is where the XML comes from.
+
+**Retrieve an existing flow and use it as the template.** Do not hand-author flow
+XML from scratch, and do not copy a generic sample from elsewhere: either one
+produces metadata that fails to deploy over record types, picklist values, and
+field API names it could not have known. A flow already running in this org is
+correct by construction.
+
+```bash
+node scripts/flow.mjs list --active          # find the closest working analogue
+node scripts/flow.mjs retrieve <ApiName>     # → force-app/main/default/flows/
+cp force-app/main/default/flows/<ApiName>.flow-meta.xml \
+   force-app/main/default/flows/<NewApiName>.flow-meta.xml
+```
+
+Edit the copy — `<label>`, `<interviewLabel>`, and the logic — then dry-run
+deploy, apply, and activate. A new flow always lands inactive, so nothing runs
+until that last step.
+
+Pick the template by trigger type and object, not by name: cloning a
+record-triggered flow on the same object gets the `<start>` block, trigger type,
+and context right for free, which is most of what goes wrong.
+
+`force-app/` is gitignored — see [force-app/README.md](../../../../force-app/README.md).
+Retrieved metadata is the operator's org configuration, never repo content.
+
 ## SObject Work
 
 - Inspect object/schema details before mutating unfamiliar standard or custom objects.
@@ -134,6 +164,9 @@ For an Account update CSV, include `Id` and only the fields that should change. 
   - intended behavior change
   - rollback or recovery path if known
 - Ask for explicit confirmation before making the change.
+- For a change spanning several components at once — a flow plus the custom
+  fields it reads — retrieve and deploy them as one set with a manifest rather
+  than component by component. See [manifest/README.md](../../../../manifest/README.md).
 
 ## Browser Fallback
 
