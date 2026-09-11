@@ -25,12 +25,16 @@ export async function hubspotRequest(path, init = {}) {
         cache: "no-store",
     });
     if (!response.ok) {
-        let raw;
+        // Read the body exactly once. Calling .json() and then falling back to
+        // .text() throws "Body has already been read" and replaces HubSpot's real
+        // error (a 404, a validation message) with a misleading one.
+        const body = await response.text().catch(() => "");
+        let raw = body;
         try {
-            raw = await response.json();
+            raw = JSON.parse(body);
         }
         catch {
-            raw = await response.text();
+            // leave raw as the plain text body
         }
         throw new HubSpotApiError(response.status, response.statusText, raw);
     }

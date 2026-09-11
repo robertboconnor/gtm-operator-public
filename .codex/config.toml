@@ -31,6 +31,53 @@ approval_mode = "approve"
 [mcp_servers.hubspot-operator.tools."segments.search"]
 approval_mode = "approve"
 
+# Every HubSpot tool that changes something in a live portal stops for a human.
+[mcp_servers.hubspot-operator.tools."workflows.delete"]
+approval_mode = "approve"
+
+[mcp_servers.hubspot-operator.tools."workflows.set_enabled"]
+approval_mode = "approve"
+
+[mcp_servers.hubspot-operator.tools."workflows.rename"]
+approval_mode = "approve"
+
+[mcp_servers.hubspot-operator.tools."workflows.create_manual"]
+approval_mode = "approve"
+
+[mcp_servers.hubspot-operator.tools."workflows.add_go_to_workflow_step"]
+approval_mode = "approve"
+
+[mcp_servers.hubspot-operator.tools."workflows.add_email_branch"]
+approval_mode = "approve"
+
+[mcp_servers.hubspot-operator.tools."crm.update_properties"]
+approval_mode = "approve"
+
+[mcp_servers.hubspot-operator.tools."users.create"]
+approval_mode = "approve"
+
+[mcp_servers.hubspot-operator.tools."users.update"]
+approval_mode = "approve"
+
+[mcp_servers.outreach-operator]
+args = ["./plugins/outreach-operator/dist/server.js"]
+command = "node"
+
+# Mutations only. Reads (outreach.search / outreach.get / outreach.whoami /
+# outreach.custom_fields) run without a prompt; anything that writes to a real
+# Outreach org stops for a human first.
+[mcp_servers.outreach-operator.tools."outreach.create"]
+approval_mode = "approve"
+
+[mcp_servers.outreach-operator.tools."outreach.update"]
+approval_mode = "approve"
+
+[mcp_servers.outreach-operator.tools."outreach.delete"]
+approval_mode = "approve"
+
+[mcp_servers.outreach-operator.tools."sequences.enroll_prospect"]
+approval_mode = "approve"
+
 [mcp_servers.salesforce-sobject-all]
 command = "npx"
 args = [

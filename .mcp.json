@@ -2,7 +2,16 @@
   "mcpServers": {
     "hubspot-operator": {
       "command": "node",
-      "args": ["./plugins/hubspot-operator/dist/server.js"],
+      "args": [
+        "./plugins/hubspot-operator/dist/server.js"
+      ],
+      "cwd": "."
+    },
+    "outreach-operator": {
+      "command": "node",
+      "args": [
+        "./plugins/outreach-operator/dist/server.js"
+      ],
       "cwd": "."
     },
     "salesforce-sobject-all": {

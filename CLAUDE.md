@@ -2,11 +2,11 @@
 
 Operating notes for Claude Code (or any other coding agent) working in this repo.
 
-**What this is.** A toolkit for operating a go-to-market stack — HubSpot and
-Salesforce — from a coding agent. It gives the agent deterministic, permissioned
-tools instead of brittle clicking: a local HubSpot MCP server, wiring for
-Salesforce's first-party Hosted MCP servers, and Salesforce CLI scripts for
-flows, bulk data, metadata, and schema.
+**What this is.** A toolkit for operating a go-to-market stack — HubSpot,
+Salesforce, and Outreach — from a coding agent. It gives the agent deterministic,
+permissioned tools instead of brittle clicking: local HubSpot and Outreach MCP
+servers, wiring for Salesforce's first-party Hosted MCP servers, and Salesforce
+CLI scripts for flows, bulk data, metadata, and schema.
 
 **What it is for.** This is a public reference implementation, meant to be read,
 run, and **pointed at whatever portal and org the user actually has**. Assume the
@@ -31,34 +31,52 @@ not a deploy; a preview is not a change. **Never report a mutation that did not
 actually commit.**
 
 For HubSpot specifically, the destructive tools are `workflows.delete`,
-`workflows.set_enabled`, `workflows.rename`, `crm.update_properties`,
-`users.create`, and `users.update`. Confirm before each one, name what it will
-hit, and never batch them behind a single yes.
+`workflows.set_enabled`, `workflows.rename`, `workflows.create_manual`,
+`workflows.clone_basic`, `workflows.add_email_branch`,
+`workflows.add_go_to_workflow_step`, `crm.update_properties`, `users.create`,
+and `users.update`. For Outreach they are `outreach.create`, `outreach.update`,
+`outreach.delete`, and `sequences.enroll_prospect` — enrolling real people in a
+sequence sends real email. Confirm before each one, name what it will hit, and
+never batch them behind a single yes.
 
 ## Getting it running
 
 **Requirements:** Node 20+ and npm; the Salesforce CLI (`sf`) for the flow,
-metadata, and data scripts; a HubSpot private app token; and a Salesforce
-External Client App for the Hosted MCP servers (see
-[SALESFORCE_SETUP.md](SALESFORCE_SETUP.md)).
+metadata, and data scripts; a HubSpot private app token; an Outreach OAuth
+application for the Outreach server; and a Salesforce External Client App for the
+Hosted MCP servers (see [SALESFORCE_SETUP.md](SALESFORCE_SETUP.md)).
 
-Verified working path, about a minute:
+Verified working path, about a minute per plugin:
 
 ```bash
 cd plugins/hubspot-operator
-npm install
-npm run build
+npm install && npm run build
 cp .env.example .env     # then put the token in HUBSPOT_ACCESS_TOKEN
 ```
 
 `dist/` is committed but `node_modules` is not, so `npm install` is still
-required even though the build output looks present. Prefer these commands over
-the `scripts/*-gtm-stack-operator-*` wrappers, which do more than you need here.
+required even though the build output looks present.
+`scripts/setup-gtm-stack-operator-claude.sh` runs the same two commands if you
+prefer one call.
+
+Outreach is the same build plus a one-time browser sign-in, because its auth is
+OAuth rather than a static token:
+
+```bash
+cd plugins/outreach-operator
+npm install && npm run build
+cp .env.example .env     # OAuth app id + secret from the Outreach dev portal
+npm run login            # once per machine; opens the consent screen
+```
+
+The login listener uses a self-signed certificate, so the browser warns that the
+page is not private. That is the script's own listener on localhost — expected,
+not a problem.
 
 Then wire the agent to the servers:
 
 - **Claude Code** reads [`.mcp.json`](.mcp.json) from the repo root — it launches
-  the local HubSpot server and the Salesforce Hosted MCP servers.
+  the local HubSpot and Outreach servers and the Salesforce Hosted MCP servers.
 - **Codex** reads [`.codex/config.toml`](.codex/config.toml).
 - Replace `YOUR_SALESFORCE_CONNECTED_APP_CLIENT_ID` with the External Client
   App's Consumer Key in whichever file applies.
@@ -74,9 +92,9 @@ node scripts/flow.mjs list --active     # a read; safe to run
 ## There is no zero-credential demo
 
 Say this plainly rather than letting someone discover it. Every tool in this repo
-needs either a HubSpot token or an authenticated Salesforce org — there is
-nothing to show on a bare clone. `node scripts/flow.mjs --help` runs without
-credentials and prints the command surface, and that is the extent of it.
+needs a HubSpot token, an Outreach OAuth app, or an authenticated Salesforce org —
+there is nothing to show on a bare clone. `node scripts/flow.mjs --help` runs
+without credentials and prints the command surface, and that is the extent of it.
 
 **The fastest real first win** is HubSpot, not Salesforce: a private app token
 with read scopes takes a few minutes, and then `workflows.search` will list the
@@ -88,8 +106,9 @@ only then go wider.
 
 - **Never call a mutating tool unless the user asked for that change in that
   message.** Not "it seems like they'd want this next," not as cleanup.
-- **Never write customer data into the repo.** Anything containing HubSpot or
-  Salesforce record data resolves to `GTM_OUTPUT_ROOT` (default
+- **Never write customer data into the repo.** Anything containing HubSpot,
+  Salesforce, or Outreach record data — prospects and accounts are PII —
+  resolves to `GTM_OUTPUT_ROOT` (default
   `~/gtm-operator-output`), outside the repo — use `outputPath()` / `exportPath()`
   from [scripts/lib/paths.mjs](scripts/lib/paths.mjs), never a relative literal.
 - **Credentials live in `.env` files and `~/.sf`, never in git.** Do not echo a
@@ -116,6 +135,14 @@ only then go wider.
 - **The `sf` CLI needs an authenticated org before any script works.**
   `SF_TARGET_ORG` selects it; without it the scripts fall back to the alias
   `my-org` and fail confusingly if that doesn't exist.
+- **Outreach access tokens last 2 hours; refresh tokens last 14 days and rotate
+  on every use.** The plugin refreshes on its own, but never copy
+  `tokens.json` between machines — spending the refresh token on one kills the
+  other. After 14 days idle the chain is dead and login must be re-run.
+- **An Outreach 403 is almost always a missing OAuth scope**, not a user
+  permission problem. Run `outreach.whoami` to see what the token actually
+  carries; fixing it means ticking the scope in the developer portal and logging
+  in again, not retrying.
 - **Salesforce Hosted MCP is first-party.** Salesforce owns the OAuth and
   enforces its own permissions — if a call is refused, that is the org's
   permission model talking, and the fix is in Salesforce, not here.
@@ -124,9 +151,13 @@ only then go wider.
 
 - `plugins/hubspot-operator/` — the HubSpot MCP server (`src/` → `dist/`), its
   `.env`, and the agent skills
-- `plugins/hubspot-operator/skills/` — operating instructions for the HubSpot and
-  Salesforce operators; read these before a complex task, they are more specific
-  than this file
+- `plugins/outreach-operator/` — the Outreach MCP server, same shape. Auth is
+  OAuth rather than a static token: `npm run login --prefix
+  plugins/outreach-operator` once per machine, and the tokens land outside the
+  repo in `~/.config/gtm-operator/outreach/`
+- `plugins/hubspot-operator/skills/` and
+  `plugins/outreach-operator/skills/` — operating instructions per system; read
+  these before a complex task, they are more specific than this file
 - `scripts/flow.mjs` — Salesforce Flow operator (list, retrieve, inspect, diff,
   deploy, activate, deactivate, delete), preview-first throughout
 - `scripts/salesforce_*.mjs`, `scripts/lib/` — Bulk API 2.0 ingest, OAuth helper,
