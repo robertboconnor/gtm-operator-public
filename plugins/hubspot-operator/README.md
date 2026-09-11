@@ -83,6 +83,7 @@ The local MCP server exposes:
 - `workflows.delete`
 - `workflows.clone_basic`
 - `workflows.add_go_to_workflow_step`
+- `workflows.add_email_branch` — preview-first; needs `apply: true` to write
 - `crm.search`
 - `crm.get`
 - `crm.update_properties`
@@ -104,6 +105,13 @@ The local MCP server exposes:
 - `segments.members.list`
 - `segments.members.add`
 - `segments.members.remove`
+- `marketing_emails.search`
+- `properties.list`
+- `properties.get`
+- `crm.property_history`
+- `crm.import_history`
+- `imports.list`
+- `imports.get`
 
 ## Salesforce Tool Surface
 
