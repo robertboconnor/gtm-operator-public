@@ -1,6 +1,7 @@
-# CLAUDE.md — gtm-operator
+# AGENTS.md — gtm-operator
 
-Operating notes for Claude Code (or any other coding agent) working in this repo.
+Operating notes for a coding agent (Codex, Claude Code, or anything else that
+reads this file) working in this repo.
 
 **What this is.** A toolkit for operating a go-to-market stack — HubSpot and
 Salesforce — from a coding agent. It gives the agent deterministic, permissioned
