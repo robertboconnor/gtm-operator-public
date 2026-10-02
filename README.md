@@ -47,6 +47,7 @@ are the point.
 | `tools/export_salesforce_schema.mjs` | Exports field definitions + DLRS rollup metadata for chosen objects to JSON/CSV. |
 | `plugins/.../skills/` | Agent **skills** (operating instructions) for the HubSpot and Salesforce operators. |
 | `AGENTS.md` + `CLAUDE.md` | The briefing for whatever agent you open this in — setup, guardrails, and the gotchas already paid for. |
+| `HOUSE_CONVENTIONS.md` | Your team's conventions, hard-won rules, and playbook index. Ships empty; the agent fills it in as it works. |
 
 ## Requirements
 
@@ -114,6 +115,28 @@ second login anywhere in this repo.
   in git. Override the location with the `GTM_OUTPUT_ROOT` env var.
 - Credentials live in `.env` files and your OS keychain / `~/.sf` — never in the repo.
 
+## How it gets smarter
+
+The tools in this repo are fixed. What surrounds them is not: the agent is told
+to write down what each task teaches it, so the next session starts smarter than
+the last.
+
+- **A rule to learn.** `AGENTS.md` / `CLAUDE.md` tell the agent that when a task
+  teaches it something non-obvious (an API quirk, an ID it had to hunt for, a
+  correction from you), it writes that down in the same session, before calling
+  the task done.
+- **Places to put it.** How a system behaves goes in that system's skill. Facts
+  and norms about your team, and the judgment calls you want it to keep making,
+  go in `HOUSE_CONVENTIONS.md`. A request that keeps coming back gets its own
+  playbook under `.claude/skills/`.
+- **It starts empty.** `HOUSE_CONVENTIONS.md` ships blank. Your conventions, your
+  hard lessons, and your values fill it in, not anyone else's.
+
+So the loop is: a request comes in, the agent handles it, and whatever surprised
+it gets written down so next time it's routine. Because the lessons live in the
+repo rather than in one agent's private memory, they carry across machines,
+teammates, and agents.
+
 ## Repo layout
 
 ```
@@ -125,6 +148,8 @@ plugins/hubspot-operator/
   skills/           Agent operating instructions (HubSpot + Salesforce)
   docs/             Salesforce Hosted MCP notes
 examples/           Ready-to-copy MCP client config for Claude & Codex
+HOUSE_CONVENTIONS.md  Your team's conventions and lessons (starts empty)
+.claude/skills/     Your team's own playbooks (starts empty)
 ```
 
 ## License

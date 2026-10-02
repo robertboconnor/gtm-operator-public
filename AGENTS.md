@@ -19,6 +19,10 @@ disable, and delete real workflows and update real CRM records; the Salesforce
 scripts can deploy and delete real flows. Treat every tool call as an action on a
 live business system, because it is.
 
+**Then read [HOUSE_CONVENTIONS.md](HOUSE_CONVENTIONS.md).** It holds what this
+team has learned about its own stack and how it wants work done. Where it is more
+specific than this file, it wins.
+
 ## Golden rule: preview-first
 
 Reads run freely. **Every mutation is preview-first** — show the plan, change
@@ -285,6 +289,9 @@ only then go wider.
 
 ## Gotchas already paid for — don't rediscover these
 
+Add to this list when you hit a new one that would catch anyone running this
+repo. Anything specific to one portal or org goes in `HOUSE_CONVENTIONS.md`.
+
 - **The HubSpot token is read per request**, not at startup
   (`src/hubspot.ts`). The MCP server will connect happily with no token and then
   fail every call with `Missing HUBSPOT_ACCESS_TOKEN` — that is a missing `.env`,
@@ -314,6 +321,48 @@ only then go wider.
   enforces its own permissions — if a call is refused, that is the org's
   permission model talking, and the fix is in Salesforce, not here.
 
+## How this repo gets smarter
+
+The tools here are fixed. The written-down judgment around them is not: every
+session that teaches something should leave the next one better informed. Doing
+that is part of finishing the task, not an extra.
+
+**When a task teaches you something non-obvious, write it down in the same
+session,** before you report the task done. It is worth keeping if the next
+session would otherwise have to rediscover it: an API that behaves differently
+than documented, a field that means something other than its name says, an ID you
+had to hunt for, a naming convention, a preference the user stated, a mistake the
+user had to correct. A correction from the user is always worth keeping.
+
+Put it where the next agent will look:
+
+| What you learned | Where it goes |
+| --- | --- |
+| How a tool, API, or system behaves, true for anyone using it | That system's skill under `plugins/*/skills/`, or "Gotchas already paid for" above |
+| A fact about *this* stack or team: IDs, naming, who asks for what, how they want answers | `HOUSE_CONVENTIONS.md` → Conventions |
+| A judgment call: how to analyse, what to value, a mistake not to repeat | `HOUSE_CONVENTIONS.md` → Rules learned the hard way |
+| A kind of request that keeps coming back | A playbook at `.claude/skills/<name>/SKILL.md`, listed in `HOUSE_CONVENTIONS.md` → Playbooks |
+
+**The second time the same kind of request shows up, write a playbook:** what to
+check first, the steps, the traps, and how to confirm it worked. Update it every
+time a run teaches something new.
+
+How to write an entry:
+
+- **Short, with the why.** One or two sentences and the reason behind it. A rule
+  without its reason gets misapplied.
+- **Dated** (`YYYY-MM-DD`), so a later reader can tell a fresh lesson from a
+  stale one.
+- **Fix, don't pile up.** If an entry already covers it, update that one. If one
+  turns out to be wrong, correct or delete it; a wrong rule is worse than none.
+- **Say what you wrote.** Tell the user in one line what you added and where, so
+  they can push back.
+- **Never record data or secrets.** No customer or employee records, contact
+  details, exports, or tokens. Same rule as everywhere else in this repo.
+- **The repo, not just your memory.** An agent's own memory stays on one machine
+  and with one tool. It never reaches a teammate, a different agent, or the
+  user's other computer. If it is worth keeping, it goes in a file here.
+
 ## Where things are
 
 - `plugins/hubspot-operator/` — the HubSpot MCP server (`src/` → `dist/`), its
@@ -333,6 +382,10 @@ only then go wider.
   metadata to JSON/CSV
 - `.mcp.json`, `.codex/config.toml` — client wiring for Claude Code and Codex
 - [SALESFORCE_SETUP.md](SALESFORCE_SETUP.md) — the External Client App walkthrough
+- [HOUSE_CONVENTIONS.md](HOUSE_CONVENTIONS.md) — this team's conventions, hard
+  lessons, and playbook index; read before any task, add to it as you learn
+- `.claude/skills/` — this team's own playbooks for recurring requests (starts
+  empty)
 
 ---
 
